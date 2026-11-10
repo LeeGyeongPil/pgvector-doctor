@@ -1,0 +1,27 @@
+# 네트워크 DB·Docker·키 없이 전체 흐름을 검증한다(테스트는 프로세스 안 PGlite = 연습용 목 모드).
+name: ci
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1"   # 매주 월요일 — 의존성·런타임이 바뀌어 깨지지 않았는지 정기 확인
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["22.12.0", "24"]   # 22.12.0 = package.json engines 최저 버전
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm start
+      # 최저 Node 의 번들 npm 으로 pack → 새 프로젝트 설치 → bin·require·import·demo 확인
+      - if: matrix.node == '22.12.0'
+        run: npm run check:pack
