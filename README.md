@@ -1,5 +1,7 @@
 # pgvector-doctor
 
+**한국어** | [English](README.en.md)
+
 > **English summary** — pgvector-doctor measures how many of the true nearest neighbours your pgvector HNSW index actually returns (recall@k) for your own filtered SQL, broken down by filter value, and picks the cheapest `ef_search` / `iterative_scan` setting that reaches a recall target. It also catches the "fake 100% recall" you get when the planner skips the vector index. Run `git clone https://github.com/LeeGyeongPil/pgvector-doctor.git && cd pgvector-doctor && npm ci && npm start` for a server-free practice (mock) demo; after the npm release, `npx pgvector-doctor demo`.
 
 `WHERE tenant_id = $2 ORDER BY embedding <=> $1 LIMIT 10` 같은 필터 걸린 벡터 검색이 **오류 없이 결과를 덜 돌려줘도** 알아채기 어렵습니다. 이 도구는 내 SQL 그대로 정확 검색과 비교해 숫자로 보여 주고, 목표 recall 을 가장 싸게 맞추는 설정(붙여 넣을 `SET LOCAL` 문 포함)을 골라 줍니다.
