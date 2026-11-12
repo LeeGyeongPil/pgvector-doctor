@@ -3,6 +3,7 @@
 //   비용: 평균 읽은 버퍼 수(기계 속도와 무관해 재현됨). 버퍼 정보가 없으면 p95 지연으로 대체.
 //   동률: ef_search 낮은 것 → off < strict_order < relaxed_order → max_scan_tuples 낮은 것.
 import type { ConfigResult } from './measure.js';
+import { t, withL10n, type MessageKey, type Params } from './i18n.js';
 
 export type TargetScope = 'mean' | 'group';
 
@@ -63,21 +64,21 @@ export function recommend(results: readonly ConfigResult[], opts: RecommendOptio
 
   for (const r of results) {
     if (r.summary.indexUsedRatio < 1) {
-      rejected.push({ label: r.label, why: `index-not-used (${fmt(r.summary.indexUsedRatio)} of queries used the vector index)` });
+      rejected.push(reject(r.label, 'rej.index-not-used', { value: fmt(r.summary.indexUsedRatio) }));
       continue;
     }
     const recall = scopedRecall(r, targetScope);
     if (recall === null) {
-      rejected.push({ label: r.label, why: 'no-recall (every query had an empty exact result)' });
+      rejected.push(reject(r.label, 'rej.no-recall'));
       continue;
     }
     if (recall < target) {
-      rejected.push({ label: r.label, why: `recall-below-target (${fmt(recall)} < ${fmt(target)})` });
+      rejected.push(reject(r.label, 'rej.recall-below-target', { value: fmt(recall), target: fmt(target) }));
       continue;
     }
     const short = scopedShort(r, targetScope);
     if (short > maxShort) {
-      rejected.push({ label: r.label, why: `too-many-short (${fmt(short)} > ${fmt(maxShort)})` });
+      rejected.push(reject(r.label, 'rej.too-many-short', { value: fmt(short), max: fmt(maxShort) }));
       continue;
     }
     ok.push(r);
@@ -97,6 +98,11 @@ export function recommend(results: readonly ConfigResult[], opts: RecommendOptio
   );
   const choice = sorted[0] ?? null;
   return { choice, reason: choice ? null : 'no-config-meets-target', cost, target, targetScope, maxShort, rejected };
+}
+
+/** 영어 사유(JSON·라이브러리용)에 한국어 렌더러를 비열거 속성으로 붙인다 — JSON 출력은 그대로. */
+function reject(label: string, key: MessageKey, params: Params = {}): Rejection {
+  return withL10n({ label, why: t('en', key, params) }, (lang) => t(lang, key, params));
 }
 
 function fmt(n: number): string {

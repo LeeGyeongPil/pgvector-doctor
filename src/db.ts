@@ -15,6 +15,12 @@ export type Setting = readonly [name: string, value: string];
 /** 접속 실패 — CLI 에서 종료 코드 2 로 바뀐다. */
 export class ConnectionError extends Error {
   override name = 'ConnectionError';
+  /** 드라이버·서버가 준 원문(번역하지 않는다). CLI 가 접두어만 현지화할 때 쓴다. */
+  readonly detail?: string;
+  constructor(message: string, detail?: string) {
+    super(message);
+    if (detail !== undefined) this.detail = detail;
+  }
 }
 
 /** 접속 문자열로 pg Client 를 연다. 끝나면 반드시 `close()` 를 부른다. */
@@ -27,7 +33,7 @@ export async function connect(url: string): Promise<{ db: Queryable; close: () =
     await client.connect();
   } catch (err) {
     await client.end().catch(() => {});
-    throw new ConnectionError(`could not connect: ${(err as Error).message}`);
+    throw new ConnectionError(`could not connect: ${(err as Error).message}`, (err as Error).message);
   }
   const db: Queryable = {
     query: async (text, params) => {

@@ -5,6 +5,7 @@ import { type ParsedTemplate, parseTemplate, OPERATOR_OPCLASS } from './template
 import { type QueryCase, bindParams } from './cases.js';
 import { type VectorIndex, pgvectorVersion, vectorIndexes, supportsIterativeScan } from './catalog.js';
 import { planRoot, analyzePlan, notIndexedReason } from './plan.js';
+import { t, withL10n, type Lang } from './i18n.js';
 import { type EffectiveSettings, FORCE_INDEX_SETTINGS, resolveK, readEffective } from './measure.js';
 
 export type DiagnosticCode =
@@ -88,6 +89,14 @@ async function explainGeneric(
   }
 }
 
+/**
+ * 진단 한 건. `message` 는 영어(JSON·라이브러리용), 같은 문장을 다른 언어로 만드는 렌더러는
+ * 비열거 속성으로 붙여 JSON 출력에 나타나지 않게 한다.
+ */
+function diag(code: DiagnosticCode, level: Diagnostic['level'], build: (lang: Lang) => string): Diagnostic {
+  return withL10n({ code, level, message: build('en') }, build);
+}
+
 export async function check(db: Queryable, opts: CheckOptions): Promise<CheckResult> {
   const template = typeof opts.template === 'string' ? parseTemplate(opts.template) : opts.template;
   const k = resolveK(template, opts.k);
@@ -96,15 +105,11 @@ export async function check(db: Queryable, opts: CheckOptions): Promise<CheckRes
 
   const version = opts.pgvectorVersionOverride !== undefined ? opts.pgvectorVersionOverride : await pgvectorVersion(db);
   if (version === null) {
-    diagnostics.push({ code: 'no-pgvector', level: 'error', message: 'pgvector is not installed in this database (CREATE EXTENSION vector).' });
+    diagnostics.push(diag('no-pgvector', 'error', (l) => t(l, 'diag.no-pgvector')));
     return { pgvector: null, k, settings: empty, tables: [], indexes: [], plan: { mode: 'skipped', vectorIndexUsed: null, scans: [] }, diagnostics };
   }
   if (!supportsIterativeScan(version)) {
-    diagnostics.push({
-      code: 'pgvector-too-old',
-      level: 'warn',
-      message: `pgvector ${version} < 0.8.0: no iterative index scans, so filtered queries can only be fixed by raising ef_search. sweep will skip the iterative_scan axis.`,
-    });
+    diagnostics.push(diag('pgvector-too-old', 'warn', (l) => t(l, 'diag.too-old', { version })));
   }
 
   // 현재 설정(+ 선택적으로 인덱스 강제) 그대로 EXPLAIN — 실행은 하지 않는다(ANALYZE 없음).
@@ -127,11 +132,7 @@ export async function check(db: Queryable, opts: CheckOptions): Promise<CheckRes
     // (문법 오류, 없는 테이블, 다중 문장 등) — 종료 코드 2 로 알려야 하므로 그대로 던진다.
     if (first || !PARAM_TYPE_ERROR.test((err as Error).message)) throw err;
     mode = 'skipped';
-    diagnostics.push({
-      code: 'plan-check-skipped',
-      level: 'info',
-      message: `could not EXPLAIN without parameter values (${(err as Error).message}). Pass --cases-sql or --cases to check the plan.`,
-    });
+    diagnostics.push(diag('plan-check-skipped', 'info', (l) => t(l, 'diag.explain-skipped', { detail: (err as Error).message })));
   }
 
   const allIndexes = await vectorIndexes(db);
@@ -142,19 +143,13 @@ export async function check(db: Queryable, opts: CheckOptions): Promise<CheckRes
   // 플랜에서 테이블을 하나도 못 찾으면 판정할 거리가 없다 — "문제 없음(OK)" 이 아니라 "건너뜀" 으로 알린다.
   if (verdict && tables.length === 0) {
     mode = 'skipped';
-    diagnostics.push({
-      code: 'plan-check-skipped',
-      level: 'info',
-      message: 'the plan reads no table, so there is no index to check. Point the template at the table that holds the vectors.',
-    });
+    diagnostics.push(diag('plan-check-skipped', 'info', (l) => t(l, 'diag.no-table')));
   }
 
   if (verdict && tables.length > 0 && indexes.length === 0) {
-    diagnostics.push({
-      code: 'no-vector-index',
-      level: 'error',
-      message: `no hnsw/ivfflat index on ${tables.join(', ') || 'the queried tables'} — every query is an exact scan.`,
-    });
+    diagnostics.push(
+      diag('no-vector-index', 'error', (l) => t(l, 'diag.no-index', { tables: tables.join(', ') || t(l, 'diag.no-index-tables') })),
+    );
   }
 
   // 연산자 클래스: 템플릿 거리 연산자와 짝이 맞는 인덱스가 하나도 없으면 플래너가 인덱스를 쓸 수 없다.
@@ -163,12 +158,12 @@ export async function check(db: Queryable, opts: CheckOptions): Promise<CheckRes
     const matches = ops.some((op) => indexes.some((i) => i.opclass.endsWith(OPERATOR_OPCLASS[op] ?? '\u0000')));
     if (!matches) {
       const idx = indexes.map((i) => `${i.index} (${i.opclass})`).join(', ');
-      const want = ops.map((op) => `${op} needs *_${OPERATOR_OPCLASS[op]}`).join(', ');
-      diagnostics.push({
-        code: 'opclass-mismatch',
-        level: 'error',
-        message: `query uses ${ops.join(' ')} but the index is ${idx}; ${want}. Change the operator or rebuild the index with the matching operator class.`,
-      });
+      diagnostics.push(
+        diag('opclass-mismatch', 'error', (l) => {
+          const want = ops.map((op) => t(l, 'diag.opclass-want', { op, opclass: OPERATOR_OPCLASS[op] ?? '' })).join(', ');
+          return t(l, 'diag.opclass', { ops: ops.join(' '), index: idx, want });
+        }),
+      );
     }
   }
 
@@ -176,19 +171,16 @@ export async function check(db: Queryable, opts: CheckOptions): Promise<CheckRes
   const ef = eff.efSearch !== null ? Number(eff.efSearch) : DEFAULT_EF_SEARCH;
   const iterativeOff = eff.iterativeScan === null || eff.iterativeScan === 'off';
   if (k > ef && iterativeOff) {
-    diagnostics.push({
-      code: 'limit-exceeds-ef-search',
-      level: 'warn',
-      message: `LIMIT ${k} > hnsw.ef_search ${ef}: an HNSW scan returns at most ${ef} rows. Raise ef_search to at least ${k}${supportsIterativeScan(version) ? ' or enable hnsw.iterative_scan' : ''}.`,
-    });
+    diagnostics.push(
+      diag('limit-exceeds-ef-search', 'warn', (l) =>
+        t(l, 'diag.limit-ef', { k, ef, or: supportsIterativeScan(version) ? t(l, 'diag.limit-ef-or') : '' }),
+      ),
+    );
   }
 
   if (verdict && indexes.length > 0 && !verdict.vectorIndexUsed) {
-    diagnostics.push({
-      code: 'index-not-used',
-      level: 'warn',
-      message: `with the current settings the vector index is not used (${notIndexedReason(verdict)}). Results are exact, so ef_search/iterative_scan have no effect here; recall measured this way is not index quality.`,
-    });
+    const reason = notIndexedReason(verdict);
+    diagnostics.push(diag('index-not-used', 'warn', (l) => t(l, 'diag.not-used', { reason })));
   }
 
   return {

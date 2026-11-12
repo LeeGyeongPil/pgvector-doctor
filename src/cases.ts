@@ -1,7 +1,7 @@
 // 질의 사례 읽기 — 어떤 벡터·필터 값으로 템플릿을 돌려 볼지.
 //   열/필드 규칙: vector → $1, p2…pN → $2…$N, self_id(선택) → 자기 행 제외, group(선택) → 분해 기준.
 import { type Queryable, withReadOnly, toVectorText, idText } from './db.js';
-import { type ParsedTemplate, UsageError, maskSql, stripTrailing } from './template.js';
+import { type ParsedTemplate, usageError, maskSql, stripTrailing } from './template.js';
 
 export interface QueryCase {
   /** pgvector 텍스트 표현 '[..]' */
@@ -17,13 +17,13 @@ export interface QueryCase {
 /** 사례 한 줄(SQL 행 또는 JSONL 객체)을 QueryCase 로. */
 export function toCase(row: Record<string, unknown>, template: ParsedTemplate, where: string): QueryCase {
   if (!('vector' in row) || row.vector === null || row.vector === undefined) {
-    throw new UsageError(`${where}: missing "vector" (it fills $1)`);
+    throw usageError('err.cases-vector-missing', { where });
   }
   let vector: string;
   try {
     vector = toVectorText(row.vector);
   } catch (err) {
-    throw new UsageError(`${where}: ${(err as Error).message}`);
+    throw usageError('err.cases-detail', { where, detail: (err as Error).message });
   }
   const params: unknown[] = [];
   for (let n = 2; n <= template.maxParam; n++) {
@@ -32,7 +32,7 @@ export function toCase(row: Record<string, unknown>, template: ParsedTemplate, w
       continue;
     }
     const key = `p${n}`;
-    if (!(key in row)) throw new UsageError(`${where}: missing "${key}" (template uses $${n})`);
+    if (!(key in row)) throw usageError('err.cases-param-missing', { where, key, param: `$${n}` });
     params.push(row[key]);
   }
   const selfRaw = row.self_id;
@@ -56,8 +56,8 @@ export async function casesFromSql(
   timeout = '30s',
 ): Promise<QueryCase[]> {
   const sql = stripTrailing(casesSql);
-  if (sql === '') throw new UsageError('cases SQL is empty');
-  if (maskSql(sql).includes(';')) throw new UsageError('cases SQL must be a single statement');
+  if (sql === '') throw usageError('err.cases-sql-empty');
+  if (maskSql(sql).includes(';')) throw usageError('err.cases-sql-single');
   // 빈 파라미터 배열 = 확장 프로토콜 → DB 도 문장 하나만 받는다(READ ONLY 를 벗어나는 '; COMMIT; …' 차단).
   const rows = await withReadOnly(db, [['statement_timeout', timeout]], async () => (await db.query(sql, [])).rows);
   return limitCases(
@@ -77,10 +77,10 @@ export function casesFromJsonl(text: string, template: ParsedTemplate, maxCases:
     try {
       obj = JSON.parse(line);
     } catch {
-      throw new UsageError(`cases line ${i + 1}: not valid JSON`);
+      throw usageError('err.cases-json', { where: `cases line ${i + 1}` });
     }
     if (typeof obj !== 'object' || obj === null || Array.isArray(obj)) {
-      throw new UsageError(`cases line ${i + 1}: expected a JSON object`);
+      throw usageError('err.cases-object', { where: `cases line ${i + 1}` });
     }
     out.push(toCase(obj as Record<string, unknown>, template, `cases line ${i + 1}`));
   }
@@ -88,7 +88,7 @@ export function casesFromJsonl(text: string, template: ParsedTemplate, maxCases:
 }
 
 function limitCases(cases: QueryCase[], maxCases: number): QueryCase[] {
-  if (cases.length === 0) throw new UsageError('no query cases (cases SQL/JSONL returned 0 rows)');
+  if (cases.length === 0) throw usageError('err.cases-none');
   // 앞에서부터 상한만큼. 무작위 추출은 사례 SQL 쪽(ORDER BY md5(id::text) 등)에서 결정적으로 한다.
   return cases.slice(0, maxCases);
 }

@@ -1,6 +1,6 @@
 // 측정 — 사례마다 정확 검색 기준값 1번 + 설정 조합마다 근사 검색 + EXPLAIN 판정.
 import { type Queryable, type Setting, withReadOnly, idText } from './db.js';
-import { type ParsedTemplate, parseTemplate, UsageError } from './template.js';
+import { type ParsedTemplate, parseTemplate, usageError } from './template.js';
 import { type QueryCase, bindParams } from './cases.js';
 import { pgvectorVersion, vectorIndexes, currentSetting, supportsIterativeScan } from './catalog.js';
 import { planRoot, analyzePlan, notIndexedReason } from './plan.js';
@@ -102,12 +102,12 @@ export interface MeasureResult {
 export function resolveK(template: ParsedTemplate, k?: number): number {
   if (template.limit !== null) {
     if (k !== undefined && k !== template.limit) {
-      throw new UsageError(`--k ${k} conflicts with LIMIT ${template.limit} in the query template`);
+      throw usageError('err.k-conflict', { k, limit: template.limit });
     }
     return template.limit;
   }
-  if (k === undefined) throw new UsageError(`query uses LIMIT $${template.limitParam}; pass --k`);
-  if (!Number.isInteger(k) || k < 1) throw new UsageError('--k must be a positive integer');
+  if (k === undefined) throw usageError('err.k-needed', { param: `$${template.limitParam}` });
+  if (!Number.isInteger(k) || k < 1) throw usageError('err.positive-int', { name: '--k' });
   return k;
 }
 
@@ -117,10 +117,10 @@ export async function measure(db: Queryable, opts: MeasureOptions): Promise<Meas
   const configs = opts.configs && opts.configs.length > 0 ? opts.configs : [{}];
   const timeout = opts.timeout ?? '30s';
   const forceIndex = opts.forceIndex ?? false;
-  if (opts.cases.length === 0) throw new UsageError('no query cases');
+  if (opts.cases.length === 0) throw usageError('err.no-cases');
 
   const version = opts.pgvectorVersionOverride !== undefined ? opts.pgvectorVersionOverride : await pgvectorVersion(db);
-  if (version === null) throw new UsageError('pgvector extension is not installed in this database (CREATE EXTENSION vector)');
+  if (version === null) throw usageError('err.no-pgvector');
   const indexes = await vectorIndexes(db);
   const indexNames = new Set(indexes.map((i) => i.index));
   const warnings: string[] = [];

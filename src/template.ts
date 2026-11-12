@@ -1,14 +1,36 @@
 // SQL 템플릿 검사 — 사용자가 넣은 검색 SQL 을 그대로 쓰되, 측정에 필요한 규칙만 확인한다.
 //   규칙: 첫 열 = 행 식별자, $1 = 질의 벡터, LIMIT 필수(숫자 또는 $n), 문장은 하나.
 
-/** 사용법 오류(인자·템플릿·사례 형식) — CLI 에서 종료 코드 2. */
+import { t, type MessageKey, type Params } from './i18n.js';
+
+/**
+ * 사용법 오류(인자·템플릿·사례 형식) — CLI 에서 종료 코드 2.
+ * `message` 는 항상 영어. `code`·`params` 가 있으면 CLI 가 표시할 때 고른 언어로 다시 만든다.
+ */
 export class UsageError extends Error {
   override name = 'UsageError';
+  /** i18n 메시지 키(선택) */
+  readonly code?: MessageKey;
+  readonly params?: Params;
+  constructor(message: string, code?: MessageKey, params?: Params) {
+    super(message);
+    if (code !== undefined) this.code = code;
+    if (params !== undefined) this.params = params;
+  }
 }
 
 /** 템플릿이 규칙에 맞지 않을 때. */
 export class TemplateError extends UsageError {
   override name = 'TemplateError';
+}
+
+/** 영어 메시지를 사전에서 만들고 code·params 를 함께 붙인 UsageError. */
+export function usageError(code: MessageKey, params: Params = {}): UsageError {
+  return new UsageError(t('en', code, params), code, params);
+}
+
+function templateError(code: MessageKey, params: Params = {}): TemplateError {
+  return new TemplateError(t('en', code, params), code, params);
 }
 
 /** 거리 연산자 → 짝이 맞는 연산자 클래스 접미사(vector_/halfvec_/sparsevec_ 공통). */
@@ -123,16 +145,16 @@ export function stripTrailing(raw: string): string {
 
 export function parseTemplate(raw: string): ParsedTemplate {
   const sql = stripTrailing(raw);
-  if (sql === '') throw new TemplateError('query template is empty');
+  if (sql === '') throw templateError('err.tpl-empty');
   const masked = maskSql(sql);
 
   if (masked.includes(';')) {
-    throw new TemplateError('query template must be a single statement (found ";" in the middle)');
+    throw templateError('err.tpl-multi');
   }
 
   const params = [...masked.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
   if (!params.includes(1)) {
-    throw new TemplateError('query template must use $1 for the query vector (e.g. ORDER BY embedding <=> $1)');
+    throw templateError('err.tpl-no-param');
   }
   const maxParam = Math.max(...params);
 
@@ -140,17 +162,17 @@ export function parseTemplate(raw: string): ParsedTemplate {
   const limits = [...masked.matchAll(/\bLIMIT\s+(\d+|\$\d+)/gi)];
   const last = limits.at(-1);
   if (!last) {
-    throw new TemplateError('query template must have a LIMIT (recall@k needs k)');
+    throw templateError('err.tpl-no-limit');
   }
   const token = last[1]!;
   const limit = token.startsWith('$') ? null : Number(token);
   const limitParam = token.startsWith('$') ? Number(token.slice(1)) : null;
-  if (limit !== null && limit < 1) throw new TemplateError('LIMIT must be at least 1');
-  if (limitParam === 1) throw new TemplateError('$1 is the query vector; use another parameter for LIMIT');
+  if (limit !== null && limit < 1) throw templateError('err.tpl-limit-min');
+  if (limitParam === 1) throw templateError('err.tpl-limit-param');
 
   const operators = [...masked.matchAll(/<->|<#>|<=>|<\+>|<~>|<%>/g)].map((m) => m[0]);
   if (operators.length === 0) {
-    throw new TemplateError('query template has no pgvector distance operator (<->, <=>, <#>, <+>, <~>, <%>)');
+    throw templateError('err.tpl-no-operator');
   }
 
   return { sql, maxParam, limit, limitParam, operators };

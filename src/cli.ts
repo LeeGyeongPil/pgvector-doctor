@@ -7,7 +7,8 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { pathToFileURL } from 'node:url';
 import { connect, ConnectionError } from './db.js';
-import { parseTemplate, UsageError, type ParsedTemplate } from './template.js';
+import { parseTemplate, UsageError, usageError, type ParsedTemplate } from './template.js';
+import { t, resolveLang, findLangFlag, isLang, localizedText, withL10n, type Lang } from './i18n.js';
 import { casesFromSql, casesFromJsonl, type QueryCase } from './cases.js';
 import { measure, type HnswConfig, type ConfigResult } from './measure.js';
 import { sweep, parseIntList, parseIterativeList, EF_SEARCH_MIN, EF_SEARCH_MAX } from './sweep.js';
@@ -25,93 +26,87 @@ export interface CliIO {
   progress?: boolean;
 }
 
-const HELP = `pgvector-doctor ${VERSION} — measure pgvector HNSW recall for your own filtered SQL
-
-Usage
-  pgvector-doctor demo                       practice (mock) mode: in-process PGlite, no server needed
-  pgvector-doctor check   --query q.sql [--cases-sql c.sql]
-  pgvector-doctor measure --query q.sql --cases-sql c.sql [--min-recall 0.95]
-  pgvector-doctor sweep   --query q.sql --cases-sql c.sql [--target 0.95]
-
-Connection
-  --url <postgres://…>        defaults to $DATABASE_URL. Use a replica or staging DB.
-
-Inputs
-  --query <file|sql>          search SQL: first column = row id, $1 = query vector, LIMIT required
-  --cases-sql <file|sql>      SELECT returning vector (→$1), p2…pN (→$2…$N), optional self_id, "group"
-  --cases <file.jsonl>        same fields as JSON lines
-  --k <n>                     k when the template says LIMIT $n
-  --max-cases <n>             cap on query cases (default 50)
-  --timeout <30s>             statement_timeout per query (default 30s)
-
-Measuring
-  --force-index               measurement only: disable seq scan / bitmap scan / sort so the vector index is used
-  --ef <n[,n…]>               hnsw.ef_search (measure: one value; sweep default 40,100,200,400)
-  --iterative <v[,v…]>        off | strict_order | relaxed_order (sweep default: all three)
-  --max-scan-tuples <n[,n…]>  hnsw.max_scan_tuples (sweep default 20000)
-
-Gates and recommendation
-  --min-recall <0..1>         measure: exit 1 if recall@k is below this
-  --min-index-use <0..1>      measure: exit 1 if fewer queries used the vector index (default 1 when gating;
-                              below 1, --min-recall is judged on the rows the app actually gets)
-  --target <0..1>             sweep: recall target (default 0.95)
-  --target-scope mean|group   judge the mean, or every group's minimum (default mean)
-  --max-short <0..1>          allowed LIMIT-short rate (default 0)
-
-Output
-  --format table|json|md      (default table)
-  --out <file>                write the report to a file (table still printed)
-
-Exit codes: 0 ok · 1 quality gate failed / no config meets target / check error · 2 usage, connection or SQL error
-Every measurement runs in BEGIN READ ONLY with SET LOCAL; nothing is written and session settings are untouched.
-`;
+/** 도움말 본문은 i18n.ts 의 메시지 표에 있다(언어별). */
+const helpText = (lang: Lang): string => t(lang, 'help', { version: VERSION });
 
 /** 파일이면 읽고, 아니면 공백이 들어간 인라인 SQL 로 본다. */
 function readSqlArg(value: string, cwd: string, name: string): string {
   const path = resolve(cwd, value);
   if (existsSync(path)) return readFileSync(path, 'utf8');
   if (/\s/.test(value.trim())) return value;
-  throw new UsageError(`${name}: file not found: ${value}`);
+  throw usageError('err.file-not-found', { name, value });
 }
 
 function parseFraction(raw: string | undefined, name: string, fallback: number): number;
 function parseFraction(raw: string | undefined, name: string, fallback: null): number | null;
 function parseFraction(raw: string | undefined, name: string, fallback: number | null): number | null {
   if (raw === undefined) return fallback;
-  if (!/^(0(\.\d+)?|1(\.0+)?|\.\d+)$/.test(raw.trim())) throw new UsageError(`${name} must be a number between 0 and 1`);
+  if (!/^(0(\.\d+)?|1(\.0+)?|\.\d+)$/.test(raw.trim())) throw usageError('err.fraction', { name });
   return Number(raw);
 }
 
 function parsePositiveInt(raw: string | undefined, name: string, fallback?: number): number | undefined {
   if (raw === undefined) return fallback;
-  if (!/^\d+$/.test(raw.trim()) || Number(raw) < 1) throw new UsageError(`${name} must be a positive integer`);
+  if (!/^\d+$/.test(raw.trim()) || Number(raw) < 1) throw usageError('err.positive-int', { name });
   return Number(raw);
 }
 
 /** statement_timeout 값 — 숫자 + 단위만(주입 방지). */
 function parseTimeout(raw: string | undefined): string {
   const v = (raw ?? '30s').trim();
-  if (!/^\d+(ms|s|min)?$/.test(v)) throw new UsageError('--timeout must look like 30s, 500ms or 2min');
+  if (!/^\d+(ms|s|min)?$/.test(v)) throw usageError('err.timeout');
   return v;
 }
 
 function single<T>(list: T[], name: string): T {
-  if (list.length !== 1) throw new UsageError(`${name}: measure takes one value (use sweep for several)`);
+  if (list.length !== 1) throw usageError('err.single-value', { name });
   return list[0]!;
 }
 
+/**
+ * 표시할 오류 문장. 영어는 err.message 그대로, 한국어는 code·params 로 다시 만든다.
+ * 드라이버·Postgres 가 준 원문(접속 오류의 detail 등)은 번역하지 않고 그대로 붙인다.
+ */
+export function errorText(lang: Lang, err: unknown): string {
+  if (err instanceof UsageError) {
+    return lang === 'en' || !err.code ? err.message : t(lang, err.code, err.params ?? {});
+  }
+  if (err instanceof ConnectionError) {
+    return lang === 'en' || err.detail === undefined ? err.message : t(lang, 'err.connect', { detail: err.detail });
+  }
+  return (err as Error).message ?? String(err);
+}
+
+/** node:util parseArgs 오류 → 옵션 이름만 뽑아 현지화할 수 있는 UsageError(영어 message 는 Node 원문 그대로). */
+function parseArgsError(err: Error & { code?: string }): UsageError {
+  const quoted = /'([^']+)'/.exec(err.message)?.[1] ?? '';
+  const option = quoted.replace(/ <value>$/, '').split(', ').pop() ?? quoted;
+  switch (err.code) {
+    case 'ERR_PARSE_ARGS_UNKNOWN_OPTION':
+      return new UsageError(err.message, 'err.opt-unknown', { option });
+    case 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE':
+      return new UsageError(err.message, /does not take/.test(err.message) ? 'err.opt-no-value' : 'err.opt-missing-value', { option });
+    case 'ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL':
+      return new UsageError(err.message, 'err.unexpected-arg', { arg: quoted });
+    default:
+      return new UsageError(err.message, 'err.opt-other', { detail: err.message });
+  }
+}
+
 export async function run(argv: string[], io: CliIO): Promise<number> {
+  // 화면 언어는 parseArgs 보다 먼저 정한다 — --help·인자 오류도 같은 언어로 보이게.
+  const lang = resolveLang(argv, io.env);
   try {
-    return await runInner(argv, io);
+    return await runInner(argv, io, lang);
   } catch (err) {
-    if (err instanceof UsageError) io.stderr(`error: ${err.message}\n`);
-    else if (err instanceof ConnectionError) io.stderr(`error: ${err.message}\n`);
-    else io.stderr(`error: ${(err as Error).message ?? String(err)}\n`);
+    io.stderr(`error: ${errorText(lang, err)}\n`);
     return 2;
   }
 }
 
-async function runInner(argv: string[], io: CliIO): Promise<number> {
+async function runInner(argv: string[], io: CliIO, lang: Lang): Promise<number> {
+  const langFlag = findLangFlag(argv);
+  if (langFlag !== undefined && !isLang(langFlag)) throw usageError('err.lang', { value: langFlag });
   const { values: o, positionals } = (() => {
     try {
       return parseArgs({
@@ -137,13 +132,14 @@ async function runInner(argv: string[], io: CliIO): Promise<number> {
           'max-short': { type: 'string' },
           format: { type: 'string' },
           out: { type: 'string' },
+          lang: { type: 'string' },
           seed: { type: 'string' },
           help: { type: 'boolean', short: 'h' },
           version: { type: 'boolean', short: 'v' },
         },
       });
     } catch (err) {
-      throw new UsageError((err as Error).message);
+      throw parseArgsError(err as Error & { code?: string });
     }
   })();
 
@@ -153,39 +149,39 @@ async function runInner(argv: string[], io: CliIO): Promise<number> {
   }
   const command = positionals[0];
   if (o.help || command === 'help') {
-    io.stdout(HELP);
+    io.stdout(helpText(lang));
     return 0;
   }
   if (!command) {
-    io.stderr(HELP);
+    io.stderr(helpText(lang));
     return 2;
   }
-  if (positionals.length > 1) throw new UsageError(`unexpected argument: ${positionals[1]}`);
+  if (positionals.length > 1) throw usageError('err.unexpected-arg', { arg: positionals[1]! });
 
   if (command === 'demo') {
     const { demo } = await import('./demo.js');
     const seed = parsePositiveInt(o.seed, '--seed', 42)!;
-    await demo({ seed, out: (line) => io.stdout(`${line}\n`) });
+    await demo({ seed, out: (line) => io.stdout(`${line}\n`), lang });
     return 0;
   }
   if (command !== 'check' && command !== 'measure' && command !== 'sweep') {
-    throw new UsageError(`unknown command "${command}" (expected demo, check, measure or sweep)`);
+    throw usageError('err.unknown-command', { command });
   }
 
   // ---- 연결 전에 인자를 모두 검증한다(잘못된 값이 DB 에 닿지 않게). ----
   const format = (o.format ?? 'table') as Format;
-  if (!['table', 'json', 'md'].includes(format)) throw new UsageError('--format must be table, json or md');
+  if (!['table', 'json', 'md'].includes(format)) throw usageError('err.format');
   const url = o.url ?? io.env.DATABASE_URL;
-  if (!url) throw new UsageError('--url is required (or set DATABASE_URL)');
-  if (!/^postgres(ql)?:\/\//.test(url)) throw new UsageError('--url must start with postgres:// or postgresql://');
-  if (!o.query) throw new UsageError('--query is required');
+  if (!url) throw usageError('err.url-required');
+  if (!/^postgres(ql)?:\/\//.test(url)) throw usageError('err.url-scheme');
+  if (!o.query) throw usageError('err.query-required');
   const template: ParsedTemplate = parseTemplate(readSqlArg(o.query, io.cwd, '--query'));
   const k = parsePositiveInt(o.k, '--k');
   const maxCases = parsePositiveInt(o['max-cases'], '--max-cases', 50)!;
   const timeout = parseTimeout(o.timeout);
   const forceIndex = o['force-index'] ?? false;
   const targetScope = (o['target-scope'] ?? 'mean') as TargetScope;
-  if (targetScope !== 'mean' && targetScope !== 'group') throw new UsageError('--target-scope must be mean or group');
+  if (targetScope !== 'mean' && targetScope !== 'group') throw usageError('err.target-scope');
   const minRecall = parseFraction(o['min-recall'], '--min-recall', null);
   const minIndexUse = parseFraction(o['min-index-use'], '--min-index-use', 1);
   const gating = o['min-recall'] !== undefined || o['min-index-use'] !== undefined;
@@ -194,15 +190,15 @@ async function runInner(argv: string[], io: CliIO): Promise<number> {
   const ef = o.ef === undefined ? undefined : parseIntList(o.ef, '--ef', EF_SEARCH_MIN, EF_SEARCH_MAX);
   const iterative = o.iterative === undefined ? undefined : parseIterativeList(o.iterative);
   const mst = o['max-scan-tuples'] === undefined ? undefined : parseIntList(o['max-scan-tuples'], '--max-scan-tuples', 1, 2_147_483_647);
-  if (o['cases-sql'] && o.cases) throw new UsageError('use either --cases-sql or --cases, not both');
-  if (command !== 'check' && !o['cases-sql'] && !o.cases) throw new UsageError(`${command} needs --cases-sql or --cases`);
+  if (o['cases-sql'] && o.cases) throw usageError('err.cases-both');
+  if (command !== 'check' && !o['cases-sql'] && !o.cases) throw usageError('err.needs-cases', { command });
   const casesSql = o['cases-sql'] ? readSqlArg(o['cases-sql'], io.cwd, '--cases-sql') : null;
   let cases: QueryCase[] | undefined = o.cases
     ? casesFromJsonl(readFileOr2(resolve(io.cwd, o.cases), '--cases'), template, maxCases)
     : undefined;
 
   const progress = io.progress
-    ? (done: number, total: number) => io.stderr(`\rmeasuring ${done}/${total}${done === total ? '\n' : ''}`)
+    ? (done: number, total: number) => io.stderr(`\r${t(lang, 'progress', { done, total })}${done === total ? '\n' : ''}`)
     : undefined;
 
   const { db, close } = await connect(url);
@@ -211,7 +207,7 @@ async function runInner(argv: string[], io: CliIO): Promise<number> {
 
     if (command === 'check') {
       const result = await check(db, { template, cases, k, forceIndex, timeout });
-      emit(io, renderCheck(result, format), renderCheck(result, 'table'), o.out);
+      emit(io, renderCheck(result, format, lang), renderCheck(result, 'table', lang), o.out);
       return result.diagnostics.some((d) => d.level === 'error') ? 1 : 0;
     }
 
@@ -223,8 +219,8 @@ async function runInner(argv: string[], io: CliIO): Promise<number> {
       const result = await measure(db, { template, cases: cases!, configs: [config], k, forceIndex, timeout, onProgress: progress });
       const gate = gating ? evaluateGate(result.results[0]!, minRecall, minIndexUse, targetScope, result.k) : undefined;
       const input = { command: 'measure' as const, result, ...(gate ? { gate } : {}) };
-      emit(io, renderMeasure(input, format), renderMeasure(input, 'table'), o.out);
-      for (const f of gate?.failures ?? []) io.stderr(`FAIL ${f.code}: ${f.message}\n`);
+      emit(io, renderMeasure(input, format, lang), renderMeasure(input, 'table', lang), o.out);
+      for (const f of gate?.failures ?? []) io.stderr(`FAIL ${f.code}: ${localizedText(lang, f, f.message)}\n`);
       return gate && !gate.pass ? 1 : 0;
     }
 
@@ -243,9 +239,9 @@ async function runInner(argv: string[], io: CliIO): Promise<number> {
       maxShort,
     });
     const input = { command: 'sweep' as const, result, recommendation: result.recommendation };
-    emit(io, renderMeasure(input, format), renderMeasure(input, 'table'), o.out);
+    emit(io, renderMeasure(input, format, lang), renderMeasure(input, 'table', lang), o.out);
     if (!result.recommendation.choice) {
-      io.stderr(`FAIL no-config-meets-target: nothing reached recall@${result.k} >= ${target} on the vector index\n`);
+      io.stderr(`FAIL no-config-meets-target: ${t(lang, 'fail.no-config', { k: result.k, target })}\n`);
       return 1;
     }
     return 0;
@@ -255,7 +251,7 @@ async function runInner(argv: string[], io: CliIO): Promise<number> {
 }
 
 function readFileOr2(path: string, name: string): string {
-  if (!existsSync(path)) throw new UsageError(`${name}: file not found`);
+  if (!existsSync(path)) throw usageError('err.file-not-found-short', { name });
   return readFileSync(path, 'utf8');
 }
 
@@ -280,10 +276,11 @@ export function evaluateGate(
   const failures: GateResult['failures'] = [];
   const used = r.summary.indexUsedRatio;
   if (used < minIndexUse) {
-    failures.push({
-      code: 'index-not-used',
-      message: `${(used * 100).toFixed(1)}% of queries used the vector index (< ${(minIndexUse * 100).toFixed(1)}%); recall from exact scans is not index quality (${r.label}). Use --force-index to measure the index, or --min-index-use 0 to accept.`,
-    });
+    failures.push(
+      failure('index-not-used', (l) =>
+        t(l, 'gate.index-not-used', { used: (used * 100).toFixed(1), min: (minIndexUse * 100).toFixed(1), label: r.label }),
+      ),
+    );
   }
   if (minRecall !== null) {
     // 기본(--min-index-use 1): 벡터 인덱스를 탄 질의만의 recall = 인덱스 품질.
@@ -292,16 +289,29 @@ export function evaluateGate(
     const recall = observed ? scopedObserved(r, scope) : scopedRecall(r, scope);
     if (recall === null) {
       if (failures.length === 0) {
-        failures.push({ code: 'index-not-used', message: `no query used the vector index, so recall@${k} is undefined (${r.label})` });
+        failures.push(failure('index-not-used', (l) => t(l, 'gate.no-index-query', { k, label: r.label })));
       }
     } else if (recall < minRecall) {
-      failures.push({
-        code: 'recall-below-min',
-        message: `${observed ? 'observed ' : ''}recall@${k} ${recall.toFixed(3)}${scope === 'group' ? ' (worst group)' : ''} < ${minRecall} (${r.label})`,
-      });
+      failures.push(
+        failure('recall-below-min', (l) =>
+          t(l, 'gate.recall-below-min', {
+            observed: observed ? t(l, 'word.observed') : '',
+            k,
+            recall: recall.toFixed(3),
+            worst: scope === 'group' ? t(l, 'word.worst-group') : '',
+            min: minRecall,
+            label: r.label,
+          }),
+        ),
+      );
     }
   }
   return { minRecall, minIndexUse, pass: failures.length === 0, failures };
+}
+
+/** 게이트 실패 한 건. message 는 영어(JSON 용), 한국어 렌더러는 비열거 속성으로 JSON 에 나타나지 않는다. */
+function failure(code: GateResult['failures'][number]['code'], build: (lang: Lang) => string): GateResult['failures'][number] {
+  return withL10n({ code, message: build('en') }, build);
 }
 
 function scopedObserved(r: ConfigResult, scope: TargetScope): number | null {

@@ -79,7 +79,8 @@ try {
   if (esm !== 'true') fail('import "pgvector-doctor" is missing API functions');
 
   // 5) 설치본으로 demo — 런타임 의존성(PGlite·pgvector 확장)이 dependencies 에 제대로 들어갔는지
-  const demo = run(process.execPath, [join(installed, 'dist', 'cli.js'), 'demo'], consumer);
+  // 출력 문구를 검사하므로 로캘과 무관하게 영어로 고정한다(--lang en 이 환경 변수보다 우선).
+  const demo = run(process.execPath, [join(installed, 'dist', 'cli.js'), 'demo', '--lang', 'en'], consumer);
   if (!/^Recommended: /m.test(demo) || !/^SET LOCAL hnsw\./m.test(demo)) fail(`demo from the installed package did not finish:\n${demo}`);
 
   console.log(`${packed.filename}: ${files.length} files, ${packed.size} bytes packed`);

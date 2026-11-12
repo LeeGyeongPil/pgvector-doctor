@@ -7,6 +7,7 @@ import { casesFromSql } from './cases.js';
 import { measure } from './measure.js';
 import { sweep } from './sweep.js';
 import { textTable, groupRows, notIndexedLines, recommendationLines, renderMeasure, summaryTable } from './report.js';
+import { t, type Lang } from './i18n.js';
 
 export const DEMO_QUERY = 'SELECT id FROM items WHERE tenant_id = $2 ORDER BY embedding <=> $1 LIMIT 10';
 
@@ -21,10 +22,13 @@ UNION ALL
 export interface DemoOptions {
   seed?: number;
   out: (line: string) => void;
+  /** 설명 문구 언어(기본 영어). 질의 SQL·사례 그룹 이름 같은 데이터는 번역하지 않는다. */
+  lang?: Lang;
 }
 
 export async function demo(opts: DemoOptions): Promise<void> {
   const say = opts.out;
+  const lang = opts.lang ?? 'en';
   // PGlite 는 demo 에서만 쓰므로 여기서 늦게 불러온다(라이브러리 사용자는 26MB WASM 을 로드하지 않는다).
   const { PGlite } = await import('@electric-sql/pglite');
   const { vector } = await import('@electric-sql/pglite-pgvector');
@@ -32,53 +36,57 @@ export async function demo(opts: DemoOptions): Promise<void> {
   const db: Queryable = pgliteQueryable(pglite);
 
   try {
-    say('pgvector-doctor demo — practice (mock) mode');
-    say('  In-process PGlite (real PostgreSQL + pgvector compiled to WASM) with seeded synthetic data.');
-    say('  recall / LIMIT-short / index-use results are real; latency numbers are WASM numbers, not your server.');
+    say(t(lang, 'demo.title'));
+    say(t(lang, 'demo.intro1'));
+    say(t(lang, 'demo.intro2'));
     say('');
 
     const info = await createFixture(db, { seed: opts.seed ?? 42 });
     const pgVersion = String((await db.query('SHOW server_version')).rows[0]?.server_version ?? '?');
     const vecVersion = String((await db.query("SELECT extversion FROM pg_extension WHERE extname = 'vector'")).rows[0]?.extversion ?? '?');
-    say(`PostgreSQL ${pgVersion} · pgvector ${vecVersion}`);
-    say(
-      `table items: ${info.rows} rows, ${info.dim}-dim, HNSW (${info.opclass}) + btree on tenant_id; tenant 0 = 50% of rows, tenants 1..${info.smallTenants} = 1% each`,
-    );
-    say(`query: ${DEMO_QUERY}`);
-    say('cases: 20 vectors from the big tenant + 1 from each of 30 small tenants (self row excluded)');
+    say(t(lang, 'demo.versions', { pg: pgVersion, vector: vecVersion }));
+    say(t(lang, 'demo.table', { rows: info.rows, dim: info.dim, opclass: info.opclass, small: info.smallTenants }));
+    say(t(lang, 'demo.query', { query: DEMO_QUERY }));
+    say(t(lang, 'demo.cases'));
     say('');
 
     const template = parseTemplate(DEMO_QUERY);
     const cases = await casesFromSql(db, DEMO_CASES_SQL, template, 50);
 
     // ① 플래너에게 맡기기 — 작은 테넌트는 btree/순차 스캔으로 돌아 '정확 검색'이 된다. 이 recall 1.0 은 인덱스 품질이 아니다.
-    say('━━ Scene 1 — let the planner decide (default ef_search=40, iterative_scan=off)');
+    say(t(lang, 'demo.scene1'));
     const free = await measure(db, { template, cases });
     const freeRes = free.results[0]!;
-    say(renderMeasure({ command: 'measure', result: free }, 'table').trimEnd());
+    say(renderMeasure({ command: 'measure', result: free }, 'table', lang).trimEnd());
     say('');
-    say('  → Queries that skip the vector index return exact results, so their recall is a fake 100%.');
-    say('    pgvector-doctor checks EXPLAIN for the HNSW index by name and leaves those queries out of recall@k.');
-    if (notIndexedLines(freeRes).length === 0) say('  (this run: every query used the vector index)');
+    say(t(lang, 'demo.scene1-note1'));
+    say(t(lang, 'demo.scene1-note2'));
+    if (notIndexedLines(freeRes).length === 0) say(t(lang, 'demo.scene1-all-indexed'));
     say('');
 
     // ②+③ 측정용으로 벡터 인덱스를 강제하고 격자 스윕 — ef40/off 행이 장면 ②, 추천이 장면 ③.
     const swept = await sweep(db, { template, cases, forceIndex: true, target: 0.95 });
     const base = swept.results.find((r) => r.config.efSearch === 40 && r.config.iterativeScan === 'off')!;
 
-    say(`━━ Scene 2 — force the vector index (--force-index), ${base.label}`);
-    say(textTable(['config', 'group', 'cases', 'recall@k', 'short', 'index used'], groupRows(base).rows.map((r) => [base.label, ...r]), ['l', 'l', 'r', 'r', 'r', 'r']));
+    say(t(lang, 'demo.scene2', { label: base.label }));
+    say(
+      textTable(
+        [t(lang, 'head.config'), t(lang, 'head.group'), t(lang, 'head.cases'), t(lang, 'head.recall'), t(lang, 'head.short'), t(lang, 'head.index-used')],
+        groupRows(base).rows.map((r) => [base.label, ...r]),
+        ['l', 'l', 'r', 'r', 'r', 'r'],
+      ),
+    );
     say('');
-    say('  → HNSW collects ef_search=40 nearest candidates first and applies WHERE tenant_id afterwards.');
-    say('    A 1% tenant keeps ~0.4 of those 40 rows: LIMIT 10 comes back short and recall collapses — with no error.');
+    say(t(lang, 'demo.scene2-note1'));
+    say(t(lang, 'demo.scene2-note2'));
     say('');
 
-    say('━━ Scene 3 — sweep ef_search × iterative_scan and pick the cheapest config that meets recall@10 >= 0.95');
-    say(summaryTable(swept.results));
+    say(t(lang, 'demo.scene3'));
+    say(summaryTable(swept.results, false, lang));
     say('');
-    for (const line of recommendationLines(swept.recommendation, swept.k)) say(line);
+    for (const line of recommendationLines(swept.recommendation, swept.k, false, lang)) say(line);
     say('');
-    say('Try it on your database (read-only transactions, SET LOCAL only):');
+    say(t(lang, 'demo.try'));
     say('  npx pgvector-doctor check  --url "$DATABASE_URL" --query search.sql --cases-sql cases.sql');
     say('  npx pgvector-doctor sweep  --url "$DATABASE_URL" --query search.sql --cases-sql cases.sql --force-index');
     say('  npx pgvector-doctor measure --url "$DATABASE_URL" --query search.sql --cases-sql cases.sql --min-recall 0.95');

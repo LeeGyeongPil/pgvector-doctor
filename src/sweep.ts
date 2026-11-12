@@ -1,6 +1,6 @@
 // 스윕 — ef_search × iterative_scan × max_scan_tuples 격자를 훑고 가장 싼 조합을 추천한다.
 import type { Queryable } from './db.js';
-import { UsageError } from './template.js';
+import { usageError } from './template.js';
 import { pgvectorVersion, supportsIterativeScan } from './catalog.js';
 import {
   type HnswConfig,
@@ -28,9 +28,9 @@ export function parseIntList(raw: string, name: string, min: number, max: number
   const parts = raw.split(',').map((s) => s.trim());
   const out: number[] = [];
   for (const p of parts) {
-    if (!/^\d+$/.test(p)) throw new UsageError(`${name}: "${p}" is not a whole number`);
+    if (!/^\d+$/.test(p)) throw usageError('err.not-whole', { name, value: p });
     const n = Number(p);
-    if (n < min || n > max) throw new UsageError(`${name}: ${n} is outside ${min}..${max}`);
+    if (n < min || n > max) throw usageError('err.outside', { name, n, min, max });
     if (!out.includes(n)) out.push(n);
   }
   return out;
@@ -41,7 +41,7 @@ export function parseIterativeList(raw: string): IterativeScan[] {
   const out: IterativeScan[] = [];
   for (const p of raw.split(',').map((s) => s.trim())) {
     if (!(ITERATIVE_SCAN_VALUES as readonly string[]).includes(p)) {
-      throw new UsageError(`--iterative: "${p}" must be one of ${ITERATIVE_SCAN_VALUES.join(', ')}`);
+      throw usageError('err.iterative-values', { value: p, values: ITERATIVE_SCAN_VALUES.join(', ') });
     }
     if (!out.includes(p as IterativeScan)) out.push(p as IterativeScan);
   }
@@ -65,7 +65,7 @@ export function buildGrid(opts: GridOptions, version: string | null): { configs:
   for (const e of ef) validateInt(e, 'ef_search', EF_SEARCH_MIN, EF_SEARCH_MAX);
   for (const m of mst) validateInt(m, 'max_scan_tuples', 1, 2_147_483_647);
   for (const i of iter) {
-    if (!ITERATIVE_SCAN_VALUES.includes(i)) throw new UsageError(`iterative_scan: invalid value ${String(i)}`);
+    if (!ITERATIVE_SCAN_VALUES.includes(i)) throw usageError('err.iterative-invalid', { value: String(i) });
   }
 
   const warnings: string[] = [];
@@ -85,7 +85,7 @@ export function buildGrid(opts: GridOptions, version: string | null): { configs:
 }
 
 function validateInt(n: number, name: string, min: number, max: number): void {
-  if (!Number.isInteger(n) || n < min || n > max) throw new UsageError(`${name}: ${n} must be an integer in ${min}..${max}`);
+  if (!Number.isInteger(n) || n < min || n > max) throw usageError('err.int-range', { name, n, min, max });
 }
 
 /** 앱 코드에 그대로 붙여 넣을 SET LOCAL 문(트랜잭션 안에서). */
