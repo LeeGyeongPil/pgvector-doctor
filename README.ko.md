@@ -4,7 +4,7 @@
 
 `WHERE tenant_id = $2 ORDER BY embedding <=> $1 LIMIT 10` 같은 필터 걸린 벡터 검색이 **오류 없이 결과를 덜 돌려줘도** 알아채기 어렵습니다. 이 도구는 내 SQL 그대로 정확 검색과 비교해 숫자로 보여 주고, 목표 recall 을 가장 싸게 맞추는 설정(붙여 넣을 `SET LOCAL` 문 포함)을 골라 줍니다.
 
-![demo 의 2장면과 3장면: 작은 테넌트 recall 0.059, 추천 설정](docs/images/01-hero.png)
+![demo 의 2장면과 3장면: 작은 테넌트 recall 0.059, 추천 설정](docs/images/01-hero.ko.png)
 *연습용 목(mock) 모드 `npm start` 의 일부. 필터 값이 작은 테넌트(전체의 1%)는 recall 0.059, 100% 가 LIMIT 미달. 반복 스캔(iterative scan)을 켠 설정이 추천됩니다.*
 
 ## 이런 분께
@@ -29,9 +29,9 @@ npm run build        # dist/ 생성 — 이후 명령은 node dist/cli.js 로 �
 앱 코드에서 라이브러리로 쓰려면(게시 전) 레포에서 묶음 파일을 만들어 내 프로젝트에 설치합니다.
 
 ```bash
-npm pack --ignore-scripts         # pgvector-doctor-0.1.0.tgz 생성
+npm pack --ignore-scripts         # pgvector-doctor-0.2.0.tgz 생성
 cd /내/프로젝트
-npm install /경로/pgvector-doctor-0.1.0.tgz
+npm install /경로/pgvector-doctor-0.2.0.tgz
 ```
 
 ## 빠르게 시작하기
@@ -41,6 +41,8 @@ npm install /경로/pgvector-doctor-0.1.0.tgz
 ```bash
 npm start
 ```
+
+화면은 영어 또는 한국어로 나옵니다. 영어 로캘이면 영어, 한국어 로캘(`LANG=ko_KR.UTF-8`)이면 한국어입니다. 하나로 고정하려면 `--lang en` 또는 `--lang ko` 를 붙입니다(예: `npm start -- --lang ko`). 자세한 내용은 아래 "화면 언어"를 보세요. 이 문서의 출력 예시는 영어로 실었고, 한국어 화면은 스크린샷과 "화면 언어"의 예시로 보여 드립니다.
 
 처음 부분입니다.
 
@@ -61,8 +63,8 @@ cases: 20 vectors from the big tenant + 1 from each of 30 small tenants (self ro
 
 ### 장면 1 — 플래너에 맡기면 "가짜 만점"이 나옵니다
 
-![장면 1: 인덱스를 쓰지 않은 질의 30개는 recall 에서 제외됨](docs/images/02-demo-scene1.png)
-*작은 테넌트 30건은 벡터 인덱스를 타지 않아(index used 0.0%) recall 이 n/a 입니다.*
+![장면 1: 인덱스를 쓰지 않은 질의 30개는 recall 에서 제외됨](docs/images/02-demo-scene1.ko.png)
+*작은 테넌트 30건은 벡터 인덱스를 타지 않아(인덱스 사용 0.0%) recall 이 n/a 입니다.*
 
 ```text
 by group — ef_search=40 iterative_scan=off
@@ -189,7 +191,7 @@ WARN  limit-exceeds-ef-search: LIMIT 100 > hnsw.ef_search 40: an HNSW scan retur
 WARN  index-not-used: with the current settings the vector index is not used (planner chose Seq Scan on items). Results are exact, so ef_search/iterative_scan have no effect here; recall measured this way is not index quality.
 [exit 1]
 ```
-![check 출력: 연산자 클래스 불일치와 LIMIT 가 ef_search 보다 큼](docs/images/05-check.png)
+![check 출력: 연산자 클래스 불일치와 ef_search 보다 큰 LIMIT 값](docs/images/05-check.ko.png)
 *`<->`(L2) 연산자인데 인덱스는 코사인(`vector_cosine_ops`)이라 인덱스를 못 씁니다. LIMIT 100 은 `ef_search` 40 보다 커서 최대 40행만 돌아옵니다.*
 
 - `ERROR` 가 있으면 종료 코드 1, `WARN` 만 있으면 0 입니다.
@@ -215,7 +217,7 @@ small     22     0.061  100.0%      100.0%
 FAIL recall-below-min: recall@10 0.587 < 0.95 (ef_search=40 iterative_scan=off)
 [exit 1]
 ```
-![measure 출력: big 1.000, small 0.061, FAIL](docs/images/03-measure-gate.png)
+![measure 출력: big 1.000, small 0.061, FAIL](docs/images/03-measure-gate.ko.png)
 *평균(0.587)은 애매해 보여도 그룹별로 나누면 small 이 0.061 로 무너져 있음이 드러납니다. `--min-recall` 에 못 미치면 종료 코드 1 입니다.*
 
 표 읽는 법(아래 표는 4) measure 결과를 읽는 방법이며, 5)·6) 도 같은 열을 씁니다)
@@ -259,7 +261,7 @@ SET LOCAL hnsw.max_scan_tuples = 20000;
   note: Run the SET LOCAL lines inside the same transaction (same connection) as the search query; with a pool, BEGIN … COMMIT around both.
   note: relaxed_order may return rows slightly out of distance order. If order matters, wrap the query in WITH r AS MATERIALIZED (…) and ORDER BY distance + 0 outside.
 ```
-![sweep 출력: 12개 조합 표와 Recommended](docs/images/04-sweep.png)
+![sweep 출력: 12개 조합 표와 추천 설정](docs/images/04-sweep.ko.png)
 *기본 격자는 `ef_search` 40·100·200·400 × `iterative_scan` off·strict_order·relaxed_order 의 12조합입니다.*
 
 - 추천은 목표 recall(`--target`, 기본 0.95)과 LIMIT 미달 상한(`--max-short`, 기본 0)을 만족하고 **모든 질의가 벡터 인덱스를 탄** 조합 중 버퍼가 가장 적은 것입니다. 없으면 `no-config-meets-target` 으로 종료 코드 1 입니다.
@@ -331,8 +333,47 @@ PASS quality gate
 | `--target`, `--target-scope`, `--max-short` | sweep 추천 조건 | `--target 0.9 --target-scope group` |
 | `--max-cases`, `--timeout`, `--k` | 사례 수 상한(50)·질의 제한 시간(30s)·LIMIT 이 변수일 때 k | `--max-cases 100` |
 | `--format`, `--out` | `table`·`json`·`md`, 파일 저장 | `--format md --out recall.md` |
+| `--lang` | 화면 언어 `en` 또는 `ko` (아래 "화면 언어" 참고) | `--lang ko` |
 
 전체 도움말은 `node dist/cli.js --help` 입니다.
+
+### 화면 언어
+
+도움말, 사용법 오류, 표와 Markdown 보고서, `demo` 문구, 진행 표시, `FAIL` 뒤의 설명문이 영어 또는 한국어로 나옵니다. 언어는 아래 순서로 정하며, 먼저 설정된 것이 이깁니다.
+
+1. 명령줄의 `--lang en|ko`
+2. 환경변수 `PGVECTOR_DOCTOR_LANG=en|ko`
+3. `LC_ALL`, 그다음 `LC_MESSAGES`, 그다음 `LANG`: 처음 비어 있지 않은 값이 `ko` 로 시작할 때(`ko_KR.UTF-8` 등)만 한국어입니다. `C`·`POSIX`·값 없음을 포함해 그 밖은 영어입니다.
+
+```bash
+node dist/cli.js demo --lang ko                 # 환경과 관계없이 한국어
+PGVECTOR_DOCTOR_LANG=en node dist/cli.js demo   # 한국어 로캘에서도 영어
+LANG=ko_KR.UTF-8 node dist/cli.js --help        # 로캘에 따라 한국어
+node dist/cli.js --lang fr check                # error: --lang must be en or ko (got "fr"), 종료 코드 2 (한국어 로캘에서는 이 메시지도 한국어로 나옵니다)
+```
+
+한국어 화면의 예(`node dist/cli.js demo --lang ko` 의 일부)입니다.
+
+```text
+pgvector-doctor demo — 연습용(목) 모드
+  프로세스 안 PGlite(WASM 으로 컴파일한 진짜 PostgreSQL + pgvector)와 시드를 고정한 합성 데이터를 씁니다.
+  recall / LIMIT 미달 / 인덱스 사용 결과는 진짜이고, 지연 시간은 WASM 기준이라 내 서버와 다릅니다.
+
+PostgreSQL 18.6 · pgvector 0.8.7
+items 테이블: 5000행, 32차원, HNSW (vector_cosine_ops) + tenant_id btree. 테넌트 0 = 전체 행의 50%, 테넌트 1..50 = 각각 1%
+질의: SELECT id FROM items WHERE tenant_id = $2 ORDER BY embedding <=> $1 LIMIT 10
+사례: 큰 테넌트 벡터 20개 + 작은 테넌트 30곳에서 1개씩 (자기 행 제외)
+```
+
+두 언어 모두 영어 그대로 나오는 것들이 있어, 스크립트가 기대어도 됩니다.
+
+- `--format json` 출력은 `en` 과 `ko` 에서 바이트 단위로 같습니다(실행마다 달라지는 지연 숫자 제외). 진단·게이트 실패·추천 사유 안의 문장도 영어 그대로입니다.
+- 규칙 ID(`index-not-used`, `recall-below-min`, `no-config-meets-target`, 진단 코드), 태그 `PASS`·`FAIL`·`ERROR`·`WARN`·`INFO`·`OK`, 오류 줄 머리의 `error:`
+- `SET LOCAL …` 문, `ef_search=40 iterative_scan=off` 같은 설정 라벨, `Seq Scan on items` 같은 EXPLAIN 노드 이름
+- Postgres 서버·드라이버 오류의 원문(그 앞의 접두어만 번역됩니다. 예: `접속하지 못했습니다:`)
+- demo 의 데이터: `big tenant (50% of rows)` 같은 그룹 이름과 질의 SQL
+
+출력 문구를 `grep` 하는 스크립트라면 `--lang en` 을 붙이거나 `PGVECTOR_DOCTOR_LANG=en` 을 설정해 두세요. 로캘에 따라 문구가 바뀌지 않습니다.
 
 ### 가짜 만점 확인 — 인덱스를 못 탄 채로 게이트를 걸면
 
@@ -418,6 +459,7 @@ SET LOCAL hnsw.max_scan_tuples = 20000;
 | `--max-cases` | 질의 사례 수 상한 | 50 |
 | `--timeout` | 질의마다 `statement_timeout` | 30s |
 | `--target` | sweep 목표 recall | 0.95 |
+| `--lang` / `PGVECTOR_DOCTOR_LANG` | 화면 언어 `en` 또는 `ko`. 순서: `--lang`, `PGVECTOR_DOCTOR_LANG`, `LC_ALL`, `LC_MESSAGES`, `LANG` | 로캘이 `ko` 로 시작하지 않으면 영어 |
 
 키·계정은 필요 없습니다. 연습용 목 모드(`demo`)와 테스트는 전부 프로세스 안 PGlite 로 돌아 네트워크가 필요 없습니다.
 
@@ -488,12 +530,14 @@ flowchart LR
 | Node 버전 관련 경고·`require(esm)` 오류 | Node 22.12 미만 | Node 22.12 이상으로 올리세요(`engines: >=22.12`) |
 | `error: query template must be a single statement` (종료 코드 2) | 검색 SQL 에 문장이 둘 이상 | 하나의 `SELECT` 만 넣으세요 |
 | `error: query uses LIMIT $3; pass --k` (종료 코드 2) | LIMIT 값이 변수라 k 를 알 수 없음 | `--k 10` 처럼 숫자를 주세요 |
+| 출력이 뜻밖에 한국어(또는 영어)로 나옴 | `--lang` 과 `PGVECTOR_DOCTOR_LANG` 이 없으면 `LC_ALL` / `LC_MESSAGES` / `LANG` 을 따릅니다 | `--lang en` 또는 `--lang ko` 를 붙이거나 `PGVECTOR_DOCTOR_LANG` 을 설정하세요 |
+| 출력을 `grep` 하는 스크립트가 한국어 환경에서 맞지 않게 됨 | 사람이 읽는 문구는 로캘을 따릅니다 | `--lang en` 으로 실행하거나 항상 영어인 `--format json` 을 파싱하세요 |
 
 ## 개발·기여
 
 ```bash
 npm ci
-npm test          # build + vitest 122개, 네트워크 불필요 (약 7초)
+npm test          # build + vitest 146개, 네트워크 불필요 (약 7초)
 npm run check:pack  # 묶음 파일을 새 프로젝트에 설치해 bin·require·import·demo 확인
 ```
 버그·제안은 이슈로 남겨 주세요. 변경 기록은 [CHANGELOG.md](CHANGELOG.md).

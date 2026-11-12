@@ -29,9 +29,9 @@ It has not been published to npm yet. **After publishing**, you can use the same
 To use it as a library in app code (before publishing), build the package file from the repo and install it into your project.
 
 ```bash
-npm pack --ignore-scripts         # Creates pgvector-doctor-0.1.0.tgz
+npm pack --ignore-scripts         # Creates pgvector-doctor-0.2.0.tgz
 cd /my/project
-npm install /path/to/pgvector-doctor-0.1.0.tgz
+npm install /path/to/pgvector-doctor-0.2.0.tgz
 ```
 
 ## Quick start
@@ -41,6 +41,8 @@ This is a **practice mock mode** that needs neither a server nor a DB. In-proces
 ```bash
 npm start
 ```
+
+The screen is in English or Korean. With an English locale you get English; with a Korean locale (`LANG=ko_KR.UTF-8`) you get Korean. To force one, add `--lang en` or `--lang ko` (for example `npm start -- --lang ko`); see "Screen language" below. The examples in this README are shown in English.
 
 The first part:
 
@@ -331,8 +333,34 @@ Exit codes
 | `--target`, `--target-scope`, `--max-short` | Sweep recommendation conditions | `--target 0.9 --target-scope group` |
 | `--max-cases`, `--timeout`, `--k` | Cap on case count (50), query time limit (30s), and k when LIMIT is a variable | `--max-cases 100` |
 | `--format`, `--out` | `table`, `json`, `md`, and save to a file | `--format md --out recall.md` |
+| `--lang` | Screen language, `en` or `ko` (see "Screen language") | `--lang ko` |
 
 For full help, run `node dist/cli.js --help`.
+
+### Screen language
+
+The help, usage errors, tables and Markdown reports, the `demo` text, progress lines and the explanation after `FAIL` are shown in English or Korean. The language is chosen in this order; the first one that is set wins:
+
+1. `--lang en|ko` on the command line
+2. the `PGVECTOR_DOCTOR_LANG=en|ko` environment variable
+3. `LC_ALL`, then `LC_MESSAGES`, then `LANG`: the first non-empty value decides, and Korean only if it starts with `ko` (such as `ko_KR.UTF-8`). Anything else, including `C`, `POSIX` or unset, means English.
+
+```bash
+node dist/cli.js demo --lang ko                 # Korean, whatever the environment says
+PGVECTOR_DOCTOR_LANG=en node dist/cli.js demo   # English, even on a Korean locale
+LANG=ko_KR.UTF-8 node dist/cli.js --help        # Korean from the locale
+node dist/cli.js --lang fr check                # error: --lang must be en or ko (got "fr"); exit code 2
+```
+
+Some output stays in English in both languages, so scripts can rely on it:
+
+- `--format json` output is byte-for-byte the same in `en` and `ko` (apart from latency numbers that change every run), including the sentences inside diagnostics, gate failures and recommendation reasons
+- Rule IDs (`index-not-used`, `recall-below-min`, `no-config-meets-target`, diagnostic codes), the tags `PASS`, `FAIL`, `ERROR`, `WARN`, `INFO`, `OK` and the `error:` prefix
+- The `SET LOCAL …` statements, setting labels such as `ef_search=40 iterative_scan=off`, and EXPLAIN node names such as `Seq Scan on items`
+- The original text of Postgres server and driver errors (only the prefix before it is translated, for example `could not connect:`)
+- The demo's data: group names such as `big tenant (50% of rows)` and the query SQL
+
+If a script greps the human-readable output, add `--lang en` or set `PGVECTOR_DOCTOR_LANG=en` so it does not change with the locale.
 
 ### Checking for a fake perfect score — if you set a gate without the index being used
 
@@ -418,6 +446,7 @@ Instead of `connect`, you can pass any object that has `query(text, params)` (`Q
 | `--max-cases` | Cap on the number of query cases | 50 |
 | `--timeout` | `statement_timeout` per query | 30s |
 | `--target` | Sweep target recall | 0.95 |
+| `--lang` / `PGVECTOR_DOCTOR_LANG` | Screen language `en` or `ko`. Order: `--lang`, `PGVECTOR_DOCTOR_LANG`, `LC_ALL`, `LC_MESSAGES`, `LANG` | English unless the locale starts with `ko` |
 
 No keys or accounts are needed. The practice mock mode (`demo`) and the tests all run on in-process PGlite and need no network.
 
@@ -488,12 +517,14 @@ The connection string is accepted only through `--url` or `DATABASE_URL` and is 
 | A Node version warning or a `require(esm)` error | Node below 22.12 | Upgrade to Node 22.12 or later (`engines: >=22.12`) |
 | `error: query template must be a single statement` (exit code 2) | The search SQL has more than one statement | Put in only a single `SELECT` |
 | `error: query uses LIMIT $3; pass --k` (exit code 2) | LIMIT is a variable, so k cannot be known | Give a number such as `--k 10` |
+| The output is in Korean (or English) and you did not expect it | The language follows `LC_ALL` / `LC_MESSAGES` / `LANG` when neither `--lang` nor `PGVECTOR_DOCTOR_LANG` is set | Add `--lang en` or `--lang ko`, or set `PGVECTOR_DOCTOR_LANG` |
+| A script that greps the output stopped matching on a Korean machine | The human-readable text follows the locale | Run with `--lang en`, or parse `--format json` (always English) |
 
 ## Development and contributing
 
 ```bash
 npm ci
-npm test          # build + 122 vitest tests, no network needed (about 7 seconds)
+npm test          # build + 146 vitest tests, no network needed (about 7 seconds)
 npm run check:pack  # Installs the package file into a fresh project and checks bin, require, import and demo
 ```
 Please leave bugs and suggestions as issues. The change log is [CHANGELOG.md](CHANGELOG.md) (Korean).
