@@ -1,6 +1,6 @@
 {
   "name": "pgvector-doctor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Measure pgvector HNSW recall against exact search for your own filtered SQL, catch fake 100% recall from seq scans, and pick the cheapest ef_search / iterative_scan setting.",
   "type": "module",
   "license": "MIT",

@@ -36,3 +36,4 @@ build/
 .flutter-plugins
 .flutter-plugins-dependencies
 coverage/
+.claude/

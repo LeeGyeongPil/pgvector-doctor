@@ -2,6 +2,15 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/), 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [0.3.0] - 2026-11-13
+
+### Added
+- `check` 진단 규칙 `ivfflat-not-tuned`(WARN): 질의 플랜이 IVFFlat 인덱스만 쓰면 `hnsw.ef_search`·`hnsw.iterative_scan` 은 효과가 없으니 `ivfflat.probes` 를 조정하라고 알립니다. 종료 코드는 그대로 0 이고, 영어·한국어로 나옵니다.
+- `measure`·`sweep` 표(와 Markdown) 위에 같은 내용의 경고 한 줄을 붙입니다. JSON 의 `warnings` 문장은 영어 그대로입니다.
+
+### Changed
+- `--format json` 의 `diagnostics`·`warnings` 배열에 IVFFlat 인덱스를 쓸 때 항목이 하나 늘 수 있습니다. 배열 길이를 고정해 검사하는 스크립트는 확인하세요.
+
 ## [0.2.0] - 2026-11-13
 
 ### Added
@@ -29,3 +38,7 @@
 ### 알려진 한계
 - `demo` 끝의 "Try it on your database" 안내는 npm 게시 전이라 `npx pgvector-doctor` 대신 `node dist/cli.js` 로 바꿔 쳐야 하고, 안내된 measure 줄은 `--force-index` 없이 `--min-recall` 을 씁니다.
 - 예시 출력의 recall 소수 셋째 자리와 buffers 값은 HNSW 난수 때문에 실행마다 조금 달라집니다.
+
+[0.3.0]: https://github.com/LeeGyeongPil/pgvector-doctor/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/LeeGyeongPil/pgvector-doctor/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/LeeGyeongPil/pgvector-doctor/releases/tag/v0.1.0
