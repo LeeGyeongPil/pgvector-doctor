@@ -29,9 +29,9 @@ It has not been published to npm yet. **After publishing**, you can use the same
 To use it as a library in app code (before publishing), build the package file from the repo and install it into your project.
 
 ```bash
-npm pack --ignore-scripts         # Creates pgvector-doctor-0.2.0.tgz
+npm pack --ignore-scripts         # Creates pgvector-doctor-0.3.0.tgz
 cd /my/project
-npm install /path/to/pgvector-doctor-0.2.0.tgz
+npm install /path/to/pgvector-doctor-0.3.0.tgz
 ```
 
 ## Quick start
@@ -195,6 +195,7 @@ WARN  index-not-used: with the current settings the vector index is not used (pl
 *The operator is `<->` (L2) but the index is cosine (`vector_cosine_ops`), so the index cannot be used. LIMIT 100 is larger than `ef_search` 40, so at most 40 rows come back.*
 
 - If there is an `ERROR`, the exit code is 1; with only `WARN` it is 0.
+- If the query uses an IVFFlat index, `check` reports `WARN ivfflat-not-tuned`, and `measure` and `sweep` print the same warning line above their tables: the `hnsw.*` settings have no effect on it, so tune `ivfflat.probes` instead.
 - When there are no cases, `check`'s plan check uses a "generic plan at average selectivity". It may differ from the actual plan for a specific small filter value, so also give `--cases-sql`.
 
 ### 4) measure — quality of the current setting
@@ -265,6 +266,7 @@ SET LOCAL hnsw.max_scan_tuples = 20000;
 *The default grid is 12 combinations of `ef_search` 40, 100, 200, 400 × `iterative_scan` off, strict_order, relaxed_order.*
 
 - The recommendation is the one with the fewest buffers among combinations that satisfy the target recall (`--target`, default 0.95) and the LIMIT-short ceiling (`--max-short`, default 0) and where **every query used the vector index**. If there is none, it exits with code 1 and `no-config-meets-target`.
+- If the query uses an IVFFlat index, a warning line is added above the table (as in `measure`): the `ef_search` grid cannot change recall there, so tune `ivfflat.probes` yourself (sweep does not tune probes yet).
 - With `--target-scope group`, **the lowest recall across all groups**, not the average, must exceed the target.
 - Run the recommended `SET LOCAL` lines in **the same transaction and on the same connection as the search query**. If you use a connection pool, wrap them in `BEGIN … COMMIT`.
 - `relaxed_order` may return results slightly out of distance order. If order matters, wrap the query in `WITH r AS MATERIALIZED (…)` and `ORDER BY distance + 0` outside.
@@ -490,7 +492,7 @@ The connection string is accepted only through `--url` or `DATABASE_URL` and is 
 
 - It only measures from the client and recommends. It does not create indexes or change server settings.
 - Recall is relative to exact search, so it is different from answer quality (RAG accuracy).
-- It handles only HNSW (including `iterative_scan` in pgvector 0.8.0 or later). IVFFlat parameter tuning and diagnostics specific to halfvec and sparsevec do not exist yet.
+- It handles only HNSW (including `iterative_scan` in pgvector 0.8.0 or later). IVFFlat parameter tuning and diagnostics specific to halfvec and sparsevec do not exist yet; `check` only warns when a query uses IVFFlat.
 - With few cases, recall has a large margin of error. Try raising it above the default case count.
 - On a server with `standard_conforming_strings = off`, the checker's judgment may differ from the server's. Execution is blocked by item 2 above (the protocol).
 - The "Try it on your database" hint at the end of `demo` is written as `npx pgvector-doctor …`, but it has not been published to npm yet, so for now replace it with `node dist/cli.js …`. The measure line in that hint uses `--min-recall` without `--force-index`, so for a filtered query it is judged as not having used the index and may fail (see "Checking for a fake perfect score" above).
@@ -498,7 +500,7 @@ The connection string is accepted only through `--url` or `DATABASE_URL` and is 
 
 ## When to use it
 - Use it when: you want to measure the recall and shortfall of a filtered pgvector HNSW search with your own SQL and data, decide `ef_search`/`iterative_scan` values, or block regressions in CI.
-- Scope of this tool: it measures read-only from the client and only recommends. It does not create indexes or change settings, and IVFFlat parameter tuning and diagnostics specific to halfvec and sparsevec do not exist yet. This tool's recall is relative to exact search and does not measure answer quality (RAG accuracy).
+- Scope of this tool: it measures read-only from the client and only recommends. It does not create indexes or change settings, and IVFFlat parameter tuning and diagnostics specific to halfvec and sparsevec do not exist yet (`check` only warns when a query uses IVFFlat). This tool's recall is relative to exact search and does not measure answer quality (RAG accuracy).
 - Other tools: to compare vector DB performance on standard datasets, use [VectorDBBench](https://github.com/zilliztech/VectorDBBench); for index and extension usage, see the [official pgvector documentation](https://github.com/pgvector/pgvector).
 
 ## Troubleshooting
@@ -509,6 +511,7 @@ The connection string is accepted only through `--url` or `DATABASE_URL` and is 
 | `FAIL index-not-used: … % of queries used the vector index` (exit code 1) | Same as above + the `--min-recall` gate | Add `--force-index` and measure again |
 | The number of result rows is below LIMIT (`short` is high) | Post-filtering: only rows that pass the filter remain among the `ef_search` candidates | Use `sweep` to look for a setting that turns on `iterative_scan` (pgvector 0.8.0 or later) |
 | A warning such as `WARN pgvector-too-old`, and no `iterative_scan` column | pgvector below 0.8.0 has no `hnsw.iterative_scan` | Upgrade pgvector or compare only `ef_search` |
+| Every `sweep` combination has the same recall, or `no-config-meets-target` | The query uses an IVFFlat index, so the `hnsw.*` settings have no effect (`WARN ivfflat-not-tuned`) | This tool does not tune IVFFlat: set `ivfflat.probes` outside it with `ALTER DATABASE … SET ivfflat.probes = N` or `ALTER ROLE … SET ivfflat.probes = N` (new connections pick it up; a setting made only in your application session is not seen by the tool's own connection), then re-run `measure` |
 | `ERROR opclass-mismatch` | The query's distance operator (`<->`, `<=>`, `<#>`) differs from the index's operator class (`*_l2_ops`, `*_cosine_ops`, `*_ip_ops`) | Change the query operator or rebuild the index to match |
 | Cannot run real mode because there is no Docker or server | Real mode needs a Postgres to connect to (with the pgvector extension installed) | `npm start` (`demo`) runs on PGlite without Docker. Use it for practice, and a replica or staging DB for diagnosis |
 | It hangs a long time at the connection step | The connection wait is up to 30 seconds, and on a large table exact search (sequential scan) runs once per query | It is not an error. Use a replica and reduce `--max-cases` and `--timeout` |
@@ -524,7 +527,7 @@ The connection string is accepted only through `--url` or `DATABASE_URL` and is 
 
 ```bash
 npm ci
-npm test          # build + 146 vitest tests, no network needed (about 7 seconds)
+npm test          # build + the vitest suite, no network needed (about 7 seconds)
 npm run check:pack  # Installs the package file into a fresh project and checks bin, require, import and demo
 ```
 Please leave bugs and suggestions as issues. The change log is [CHANGELOG.md](CHANGELOG.md) (Korean).

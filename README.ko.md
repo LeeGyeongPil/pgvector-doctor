@@ -29,9 +29,9 @@ npm run build        # dist/ 생성 — 이후 명령은 node dist/cli.js 로 �
 앱 코드에서 라이브러리로 쓰려면(게시 전) 레포에서 묶음 파일을 만들어 내 프로젝트에 설치합니다.
 
 ```bash
-npm pack --ignore-scripts         # pgvector-doctor-0.2.0.tgz 생성
+npm pack --ignore-scripts         # pgvector-doctor-0.3.0.tgz 생성
 cd /내/프로젝트
-npm install /경로/pgvector-doctor-0.2.0.tgz
+npm install /경로/pgvector-doctor-0.3.0.tgz
 ```
 
 ## 빠르게 시작하기
@@ -195,6 +195,7 @@ WARN  index-not-used: with the current settings the vector index is not used (pl
 *`<->`(L2) 연산자인데 인덱스는 코사인(`vector_cosine_ops`)이라 인덱스를 못 씁니다. LIMIT 100 은 `ef_search` 40 보다 커서 최대 40행만 돌아옵니다.*
 
 - `ERROR` 가 있으면 종료 코드 1, `WARN` 만 있으면 0 입니다.
+- 질의가 IVFFlat 인덱스를 쓰면 `check` 는 `WARN ivfflat-not-tuned` 를 내고, `measure`·`sweep` 은 표 위에 같은 경고 한 줄을 붙입니다. `hnsw.*` 설정은 효과가 없으니 `ivfflat.probes` 를 조정하세요.
 - `check` 의 플랜 확인은 사례가 없으면 "평균 선택도의 일반 계획(generic plan)"을 씁니다. 특정 작은 필터 값의 실제 계획과 다를 수 있으니 `--cases-sql` 을 함께 주세요.
 
 ### 4) measure — 지금 설정의 품질
@@ -265,6 +266,7 @@ SET LOCAL hnsw.max_scan_tuples = 20000;
 *기본 격자는 `ef_search` 40·100·200·400 × `iterative_scan` off·strict_order·relaxed_order 의 12조합입니다.*
 
 - 추천은 목표 recall(`--target`, 기본 0.95)과 LIMIT 미달 상한(`--max-short`, 기본 0)을 만족하고 **모든 질의가 벡터 인덱스를 탄** 조합 중 버퍼가 가장 적은 것입니다. 없으면 `no-config-meets-target` 으로 종료 코드 1 입니다.
+- 질의가 IVFFlat 인덱스를 쓰면 표 위에 경고 한 줄이 붙습니다(`measure` 와 같음). 이 경우 `ef_search` 격자는 recall 을 바꾸지 못하니 `ivfflat.probes` 를 직접 조정하세요(sweep 은 아직 probes 를 조정하지 않습니다).
 - `--target-scope group` 이면 평균이 아니라 **모든 그룹의 최저 recall** 이 목표를 넘어야 합니다.
 - 추천된 `SET LOCAL` 줄은 **검색 쿼리와 같은 트랜잭션·같은 연결**에서 실행하세요. 커넥션 풀을 쓰면 `BEGIN … COMMIT` 으로 감쌉니다.
 - `relaxed_order` 는 결과 순서가 거리순에서 조금 어긋날 수 있습니다. 순서가 중요하면 `WITH r AS MATERIALIZED (…)` 로 감싸고 바깥에서 `ORDER BY distance + 0` 하세요.
@@ -503,7 +505,7 @@ flowchart LR
 
 - 클라이언트에서 재고 추천만 합니다. 인덱스를 만들거나 서버 설정을 바꾸지 않습니다.
 - recall 은 정확 검색 대비 값이라 답변 품질(RAG 정답률)과는 다릅니다.
-- HNSW(pgvector 0.8.0 이상의 `iterative_scan` 포함)만 다룹니다. IVFFlat 파라미터 조정, halfvec·sparsevec 전용 진단은 아직 없습니다.
+- HNSW(pgvector 0.8.0 이상의 `iterative_scan` 포함)만 다룹니다. IVFFlat 파라미터 조정, halfvec·sparsevec 전용 진단은 아직 없습니다. `check` 는 질의가 IVFFlat 을 쓰면 경고만 합니다.
 - 사례 수가 적으면 recall 의 오차가 큽니다. 기본 사례 수보다 늘려 보세요.
 - `standard_conforming_strings = off` 서버에서는 검사기의 판정이 서버와 다를 수 있습니다. 실행은 위 2번(프로토콜)이 막습니다.
 - `demo` 끝에 나오는 "Try it on your database" 안내는 `npx pgvector-doctor …` 로 적혀 있지만 아직 npm 에 게시하지 않았으므로 지금은 `node dist/cli.js …` 로 바꿔 치세요. 그 안내의 measure 줄은 `--force-index` 없이 `--min-recall` 을 쓰므로, 필터 쿼리에서는 인덱스를 못 탄 것으로 판정돼 실패할 수 있습니다(아래 "가짜 만점 확인" 참고).
@@ -511,7 +513,7 @@ flowchart LR
 
 ## 언제 쓰나
 - 이럴 때: 필터가 걸린 pgvector HNSW 검색의 recall·결과 부족을 내 SQL·내 데이터로 재고, `ef_search`/`iterative_scan` 값을 정하거나 CI 에서 회귀를 막을 때.
-- 이 도구의 범위: 클라이언트에서 읽기 전용으로 재고 추천만 합니다. 인덱스를 만들거나 설정을 바꾸지 않고, IVFFlat 파라미터 조정·halfvec/sparsevec 전용 진단은 아직 없습니다. 이 도구의 recall 은 정확 검색 대비 값이며 답변 품질(RAG 정답률)을 재지는 않습니다.
+- 이 도구의 범위: 클라이언트에서 읽기 전용으로 재고 추천만 합니다. 인덱스를 만들거나 설정을 바꾸지 않고, IVFFlat 파라미터 조정·halfvec/sparsevec 전용 진단은 아직 없습니다(`check` 는 질의가 IVFFlat 을 쓰면 경고만 합니다). 이 도구의 recall 은 정확 검색 대비 값이며 답변 품질(RAG 정답률)을 재지는 않습니다.
 - 이럴 땐 다른 도구: 표준 데이터셋으로 벡터 DB 성능을 비교하려면 [VectorDBBench](https://github.com/zilliztech/VectorDBBench), 인덱스·확장 사용법은 [pgvector 공식 문서](https://github.com/pgvector/pgvector).
 
 ## 자주 겪는 문제
@@ -522,6 +524,7 @@ flowchart LR
 | `FAIL index-not-used: … % of queries used the vector index` (종료 코드 1) | 위와 같음 + `--min-recall` 게이트 | `--force-index` 를 추가해 다시 측정 |
 | 결과 행 수가 LIMIT 보다 적음(`short` 가 높음) | 필터 후처리: `ef_search` 후보 중 필터를 통과한 행만 남음 | `sweep` 으로 `iterative_scan`(pgvector 0.8.0 이상)을 켜는 설정을 확인 |
 | `WARN pgvector-too-old` 같은 경고, `iterative_scan` 열이 없음 | pgvector 0.8.0 미만은 `hnsw.iterative_scan` 이 없음 | pgvector 를 올리거나 `ef_search` 만 비교 |
+| `sweep` 의 모든 조합 recall 이 같거나 `no-config-meets-target` | 질의가 IVFFlat 인덱스를 써서 `hnsw.*` 설정이 효과 없음(`WARN ivfflat-not-tuned`) | 이 도구는 IVFFlat 을 조정하지 않습니다. `ivfflat.probes` 는 도구 밖에서 `ALTER DATABASE … SET ivfflat.probes = N` 또는 `ALTER ROLE … SET ivfflat.probes = N` 으로 설정(새 연결부터 적용되며, 애플리케이션 세션에서만 바꾼 값은 도구의 연결에 보이지 않음)한 뒤 `measure` 를 다시 실행 |
 | `ERROR opclass-mismatch` | 쿼리의 거리 연산자(`<->`·`<=>`·`<#>`)와 인덱스의 연산자 클래스(`*_l2_ops`·`*_cosine_ops`·`*_ip_ops`)가 다름 | 쿼리 연산자를 바꾸거나 인덱스를 맞게 다시 만들기 |
 | Docker·서버가 없어서 실제 모드를 못 돌림 | 실제 모드는 접속할 Postgres(pgvector 확장 설치)가 필요 | `npm start`(`demo`)는 Docker 없이 PGlite 로 돕니다. 연습은 그걸로, 진단은 복제본·스테이징 DB 로 |
 | 접속 단계에서 오래 멈춤 | 접속 대기 최대 30초, 큰 테이블에서 정확 검색(순차 스캔)이 질의마다 한 번 | 오류가 아닙니다. 복제본을 쓰고 `--max-cases`·`--timeout` 을 줄이세요 |
@@ -537,7 +540,7 @@ flowchart LR
 
 ```bash
 npm ci
-npm test          # build + vitest 146개, 네트워크 불필요 (약 7초)
+npm test          # build + vitest 전체 테스트, 네트워크 불필요 (약 7초)
 npm run check:pack  # 묶음 파일을 새 프로젝트에 설치해 bin·require·import·demo 확인
 ```
 버그·제안은 이슈로 남겨 주세요. 변경 기록은 [CHANGELOG.md](CHANGELOG.md).
