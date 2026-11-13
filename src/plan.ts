@@ -11,6 +11,8 @@ export interface PlanVerdict {
   scans: string[];
   /** 플랜에 나온 테이블 이름들 */
   relations: string[];
+  /** 플랜에서 실제로 쓴 카탈로그 벡터 인덱스 이름(정렬·중복 제거) */
+  vectorIndexNamesUsed: string[];
 }
 
 type PlanNode = Record<string, unknown> & { Plans?: PlanNode[] };
@@ -29,6 +31,7 @@ export function analyzePlan(root: PlanNode, vectorIndexNames: ReadonlySet<string
   const scans: string[] = [];
   const relations = new Set<string>();
   let vectorIndexUsed = false;
+  const usedNames = new Set<string>();
 
   // 트리를 위에서 아래로 훑는다(CTE·서브쿼리·Append 아래까지).
   const queue: PlanNode[] = [root];
@@ -41,7 +44,10 @@ export function analyzePlan(root: PlanNode, vectorIndexNames: ReadonlySet<string
 
     if (indexName) {
       const isVector = vectorIndexNames.has(indexName);
-      if (isVector) vectorIndexUsed = true;
+      if (isVector) {
+        vectorIndexUsed = true;
+        usedNames.add(indexName);
+      }
       scans.push(`${type} using ${indexName}${isVector ? '' : ' (not a vector index)'}`);
     } else if (/Scan$/.test(type) && relation) {
       scans.push(`${type} on ${relation}`);
@@ -54,7 +60,7 @@ export function analyzePlan(root: PlanNode, vectorIndexNames: ReadonlySet<string
   const read = root['Shared Read Blocks'];
   const buffers = typeof hit === 'number' && typeof read === 'number' ? hit + read : null;
 
-  return { vectorIndexUsed, buffers, scans, relations: [...relations].sort() };
+  return { vectorIndexUsed, buffers, scans, relations: [...relations].sort(), vectorIndexNamesUsed: [...usedNames].sort() };
 }
 
 /** 벡터 인덱스를 안 탔을 때 사유 문구 — 'planner chose Seq Scan on items' 등. */

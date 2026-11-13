@@ -140,6 +140,7 @@ Every measurement runs in BEGIN READ ONLY with SET LOCAL; nothing is written and
   // ---- reasons, warnings, advice (rendered from English strings by pattern) ----
   'reason.chose': 'planner chose {plan}',
   'reason.no-scan': 'planner chose a plan without a scan node',
+  'warn.ivfflat-not-tuned': 'ivfflat index {index} in use: hnsw.ef_search and hnsw.iterative_scan have no effect on it; tune ivfflat.probes instead',
   'warn.no-index': 'no hnsw/ivfflat index in this database — every query is an exact scan',
   'warn.ignores-iterative': 'pgvector {version} < 0.8.0 ignores hnsw.iterative_scan',
   'warn.axis-removed': 'pgvector {version} < 0.8.0: iterative_scan axis removed, sweeping ef_search only',
@@ -172,6 +173,7 @@ Every measurement runs in BEGIN READ ONLY with SET LOCAL; nothing is written and
   'diag.opclass-want': '{op} needs *_{opclass}',
   'diag.limit-ef': 'LIMIT {k} > hnsw.ef_search {ef}: an HNSW scan returns at most {ef} rows. Raise ef_search to at least {k}{or}.',
   'diag.limit-ef-or': ' or enable hnsw.iterative_scan',
+  'diag.ivfflat-not-tuned': 'the query uses ivfflat index {index}. hnsw.ef_search and hnsw.iterative_scan have no effect on IVFFlat, so ef_search changes and sweep results will not move recall; tune ivfflat.probes instead (sweep does not tune probes yet).',
   'diag.not-used': 'with the current settings the vector index is not used ({reason}). Results are exact, so ef_search/iterative_scan have no effect here; recall measured this way is not index quality.',
 
   // ---- demo ----
@@ -324,6 +326,7 @@ const ko: Record<MessageKey, string> = {
 
   'reason.chose': '플래너 선택: {plan}',
   'reason.no-scan': '플래너가 스캔 노드 없는 플랜을 선택했습니다',
+  'warn.ivfflat-not-tuned': 'ivfflat 인덱스 {index} 사용 중: hnsw.ef_search·hnsw.iterative_scan 은 효과가 없습니다. 대신 ivfflat.probes 를 조정하십시오',
   'warn.no-index': '이 데이터베이스에 hnsw/ivfflat 인덱스가 없습니다 — 모든 질의가 정확 스캔입니다',
   'warn.ignores-iterative': 'pgvector {version} (< 0.8.0) 에서는 hnsw.iterative_scan 이 무시됩니다',
   'warn.axis-removed': 'pgvector {version} (< 0.8.0): iterative_scan 축을 빼고 ef_search 만 스윕합니다',
@@ -354,6 +357,7 @@ const ko: Record<MessageKey, string> = {
   'diag.opclass-want': '연산자 {op}: *_{opclass} 연산자 클래스가 필요합니다',
   'diag.limit-ef': 'LIMIT {k} > hnsw.ef_search {ef}: HNSW 스캔은 최대 {ef}행만 돌려줍니다. ef_search 를 {k} 이상으로 올리십시오{or}.',
   'diag.limit-ef-or': ' (또는 hnsw.iterative_scan 을 켜십시오)',
+  'diag.ivfflat-not-tuned': '질의가 쓰는 ivfflat 인덱스: {index}. hnsw.ef_search 와 hnsw.iterative_scan 은 IVFFlat 에 효과가 없어 ef_search 를 바꾸거나 sweep 을 돌려도 recall 이 달라지지 않습니다. 대신 ivfflat.probes 를 조정하십시오(sweep 은 아직 probes 를 조정하지 않습니다).',
   'diag.not-used': '현재 설정에서는 벡터 인덱스가 쓰이지 않습니다 ({reason}). 결과가 정확하므로 ef_search/iterative_scan 이 영향을 주지 않으며, 이렇게 잰 recall 은 인덱스 품질이 아닙니다.',
 
   'demo.title': 'pgvector-doctor demo — 연습용(목) 모드',
@@ -418,6 +422,8 @@ export function localizeWarning(lang: Lang, warning: string): string {
   if (warning === 'no hnsw/ivfflat index in this database — every query is an exact scan') return t(lang, 'warn.no-index');
   let m = /^pgvector (.+) < 0\.8\.0 ignores hnsw\.iterative_scan$/.exec(warning);
   if (m) return t(lang, 'warn.ignores-iterative', { version: m[1]! });
+  m = /^ivfflat index (.+) in use: hnsw\.ef_search and hnsw\.iterative_scan have no effect on it; tune ivfflat\.probes instead$/.exec(warning);
+  if (m) return t(lang, 'warn.ivfflat-not-tuned', { index: m[1]! });
   m = /^pgvector (.+) < 0\.8\.0: iterative_scan axis removed, sweeping ef_search only$/.exec(warning);
   if (m) return t(lang, 'warn.axis-removed', { version: m[1]! });
   return warning;

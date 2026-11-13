@@ -129,6 +129,7 @@ export async function measure(db: Queryable, opts: MeasureOptions): Promise<Meas
     warnings.push(`pgvector ${version} < 0.8.0 ignores hnsw.iterative_scan`);
   }
 
+  const usedVectorIndexNames = new Set<string>();
   const runs: CaseRun[][] = configs.map(() => []);
   const effective: (EffectiveSettings | null)[] = configs.map(() => null);
   const notIndexed: Map<string, number>[] = configs.map(() => new Map());
@@ -160,6 +161,7 @@ export async function measure(db: Queryable, opts: MeasureOptions): Promise<Meas
         if (effective[gi] === null) effective[gi] = await readEffective(db);
         return { rows, latencyMs, verdict };
       });
+      for (const n of run.verdict.vectorIndexNamesUsed) usedVectorIndexNames.add(n);
       if (!run.verdict.vectorIndexUsed) {
         const reason = notIndexedReason(run.verdict);
         notIndexed[gi]!.set(reason, (notIndexed[gi]!.get(reason) ?? 0) + 1);
@@ -191,6 +193,13 @@ export async function measure(db: Queryable, opts: MeasureOptions): Promise<Meas
         .sort((a, b) => b.count - a.count || (a.reason < b.reason ? -1 : 1)),
     };
   });
+
+  // 쓰인 벡터 인덱스가 모두 IVFFlat 이면 hnsw.* 설정 조합은 결과를 바꾸지 못한다.
+  const usedIdx = indexes.filter((i) => usedVectorIndexNames.has(i.index));
+  if (usedIdx.length > 0 && usedIdx.every((i) => i.method === 'ivfflat')) {
+    const names = usedIdx.map((i) => i.index).sort().join(', ');
+    warnings.push(`ivfflat index ${names} in use: hnsw.ef_search and hnsw.iterative_scan have no effect on it; tune ivfflat.probes instead`);
+  }
 
   return {
     k,

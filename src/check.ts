@@ -15,6 +15,7 @@ export type DiagnosticCode =
   | 'opclass-mismatch'
   | 'limit-exceeds-ef-search'
   | 'index-not-used'
+  | 'ivfflat-not-tuned'
   | 'plan-check-skipped';
 
 export interface Diagnostic {
@@ -181,6 +182,15 @@ export async function check(db: Queryable, opts: CheckOptions): Promise<CheckRes
   if (verdict && indexes.length > 0 && !verdict.vectorIndexUsed) {
     const reason = notIndexedReason(verdict);
     diagnostics.push(diag('index-not-used', 'warn', (l) => t(l, 'diag.not-used', { reason })));
+  }
+
+  // 쓰인 벡터 인덱스가 모두 IVFFlat 이면 hnsw.* 설정은 효과가 없다 — ivfflat.probes 를 조정하라고 알린다.
+  if (verdict && verdict.vectorIndexUsed) {
+    const used = indexes.filter((i) => verdict.vectorIndexNamesUsed.includes(i.index));
+    if (used.length > 0 && used.every((i) => i.method === 'ivfflat')) {
+      const index = used.map((i) => i.index).sort().join(', ');
+      diagnostics.push(diag('ivfflat-not-tuned', 'warn', (l) => t(l, 'diag.ivfflat-not-tuned', { index })));
+    }
   }
 
   return {
