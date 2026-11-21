@@ -514,7 +514,6 @@ flowchart LR
 - HNSW(pgvector 0.8.0 이상의 `iterative_scan` 포함)만 다룹니다. IVFFlat 파라미터 조정, halfvec·sparsevec 전용 진단은 아직 없습니다. `check` 는 질의가 IVFFlat 을 쓰면 경고만 합니다.
 - 사례 수가 적으면 recall 의 오차가 큽니다. 기본 사례 수보다 늘려 보세요.
 - `standard_conforming_strings = off` 서버에서는 검사기의 판정이 서버와 다를 수 있습니다. 실행은 위 2번(프로토콜)이 막습니다.
-- `demo` 끝에 나오는 "Try it on your database" 안내는 `npx pgvector-doctor …` 로 적혀 있습니다. 그 안내의 measure 줄은 `--force-index` 없이 `--min-recall` 을 쓰므로, 필터 쿼리에서는 인덱스를 못 탄 것으로 판정돼 실패할 수 있습니다(아래 "가짜 만점 확인" 참고).
 - 연습용 목 모드의 지연(ms)은 WASM 값이고 recall 소수 셋째 자리는 실행마다 조금 달라집니다. 실제 Postgres 서버(pgvector 이미지)에 직접 붙이는 경로는 이 문서를 쓰는 환경에서 확인하지 못했고, `pg` 드라이버 경로는 PGlite 소켓 서버로 확인했습니다.
 
 ## 언제 쓰나

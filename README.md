@@ -501,7 +501,6 @@ The connection string is accepted only through `--url` or `DATABASE_URL` and is 
 - It handles only HNSW (including `iterative_scan` in pgvector 0.8.0 or later). IVFFlat parameter tuning and diagnostics specific to halfvec and sparsevec do not exist yet; `check` only warns when a query uses IVFFlat.
 - With few cases, recall has a large margin of error. Try raising it above the default case count.
 - On a server with `standard_conforming_strings = off`, the checker's judgment may differ from the server's. Execution is blocked by item 2 above (the protocol).
-- The "Try it on your database" hint at the end of `demo` is written as `npx pgvector-doctor …`. The measure line in that hint uses `--min-recall` without `--force-index`, so for a filtered query it is judged as not having used the index and may fail (see "Checking for a fake perfect score" above).
 - The latency (ms) in practice mock mode is a WASM value, and the third decimal of recall varies slightly from run to run. The path of connecting directly to a real Postgres server (the pgvector image) could not be verified in the environment where this document was written; the `pg` driver path was verified with a PGlite socket server.
 
 ## When to use it
