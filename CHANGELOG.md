@@ -2,6 +2,13 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/), 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [Unreleased]
+
+## [0.3.2] - 2026-11-21
+
+### Fixed
+- The `demo` closing hint's `measure` line now includes `--force-index` and the swept recommendation (e.g. `--iterative relaxed_order`), so it passes on the demo data.
+
 ## [0.3.1] - 2026-11-21
 
 ### Changed
