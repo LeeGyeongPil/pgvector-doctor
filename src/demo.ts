@@ -89,7 +89,12 @@ export async function demo(opts: DemoOptions): Promise<void> {
     say(t(lang, 'demo.try'));
     say('  npx pgvector-doctor check  --url "$DATABASE_URL" --query search.sql --cases-sql cases.sql');
     say('  npx pgvector-doctor sweep  --url "$DATABASE_URL" --query search.sql --cases-sql cases.sql --force-index');
-    say('  npx pgvector-doctor measure --url "$DATABASE_URL" --query search.sql --cases-sql cases.sql --min-recall 0.95');
+    // measure 안내는 sweep 추천 설정을 그대로 붙여, 같은 데이터에서 게이트가 통과하게 한다
+    const cfg = swept.recommendation.choice?.config;
+    let extra = ' --force-index';
+    if (cfg?.iterativeScan && cfg.iterativeScan !== 'off') extra += ` --iterative ${cfg.iterativeScan}`;
+    if (cfg?.efSearch !== undefined && cfg.efSearch !== 40) extra += ` --ef ${cfg.efSearch}`;
+    say(`  npx pgvector-doctor measure --url "$DATABASE_URL" --query search.sql --cases-sql cases.sql --min-recall 0.95${extra}`);
   } finally {
     await pglite.close();
   }

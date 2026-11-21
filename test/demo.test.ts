@@ -29,5 +29,11 @@ describe('demo (practice mock mode)', () => {
     expect(recall).toBeGreaterThanOrEqual(0.95);
     expect(rec).not.toMatch(/Recommended: ef_search=40 iterative_scan=off /);
     expect(out).toMatch(/^SET LOCAL hnsw\.ef_search = \d+;$/m);
+
+    // 회귀: 끝 안내의 measure 줄이 --force-index 와 추천 iterative_scan 을 포함
+    const measureLine = out.split('\n').find((l) => l.includes('pgvector-doctor measure'))!;
+    expect(measureLine).toContain('--force-index');
+    const iter = /^SET LOCAL hnsw\.iterative_scan = (\w+);$/m.exec(out);
+    if (iter && iter[1] !== 'off') expect(measureLine).toContain(`--iterative ${iter[1]}`);
   });
 });
