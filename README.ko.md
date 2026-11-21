@@ -18,21 +18,27 @@ Node.js 22.12 이상이 필요합니다(로컬 확인은 v26.13.0, 22.12.0 과 2
 
 ```bash
 # Node 가 없다면 (macOS): brew install node   /   (Linux·Windows: https://nodejs.org/en/download)
+npx pgvector-doctor demo      # 설치 없이 실행: npx pgvector-doctor <명령>
+```
+
+아래 예시는 `node dist/cli.js <명령>`(소스에서 실행하는 형태)으로 적혀 있습니다. `npx pgvector-doctor <명령>` 으로 바꿔 써도 됩니다.
+
+앱 코드에서 라이브러리로 쓰려면 내 프로젝트에 설치합니다.
+
+```bash
+npm install pgvector-doctor
+```
+
+### 소스에서 실행 (개발용)
+
+```bash
 git clone https://github.com/LeeGyeongPil/pgvector-doctor.git
 cd pgvector-doctor
 npm ci
-npm run build        # dist/ 생성 — 이후 명령은 node dist/cli.js 로 실행
+npm run build        # dist/ 생성 — 이후 node dist/cli.js <명령> 으로 실행
 ```
 
-아직 npm 에 게시하지 않았습니다. **게시 후**에는 설치 없이 `npx pgvector-doctor <명령>` 으로 같은 명령을 쓸 수 있습니다(아래 예의 `node dist/cli.js` 를 `npx pgvector-doctor` 로 바꾸면 됩니다).
-
-앱 코드에서 라이브러리로 쓰려면(게시 전) 레포에서 묶음 파일을 만들어 내 프로젝트에 설치합니다.
-
-```bash
-npm pack --ignore-scripts         # pgvector-doctor-0.3.0.tgz 생성
-cd /내/프로젝트
-npm install /경로/pgvector-doctor-0.3.0.tgz
-```
+로컬 빌드를 패키지로 시험하려면 `npm pack --ignore-scripts`(`pgvector-doctor-0.3.0.tgz` 생성) 후 내 프로젝트에서 `npm install /경로/pgvector-doctor-0.3.0.tgz` 를 실행합니다.
 
 ## 빠르게 시작하기
 
@@ -508,7 +514,7 @@ flowchart LR
 - HNSW(pgvector 0.8.0 이상의 `iterative_scan` 포함)만 다룹니다. IVFFlat 파라미터 조정, halfvec·sparsevec 전용 진단은 아직 없습니다. `check` 는 질의가 IVFFlat 을 쓰면 경고만 합니다.
 - 사례 수가 적으면 recall 의 오차가 큽니다. 기본 사례 수보다 늘려 보세요.
 - `standard_conforming_strings = off` 서버에서는 검사기의 판정이 서버와 다를 수 있습니다. 실행은 위 2번(프로토콜)이 막습니다.
-- `demo` 끝에 나오는 "Try it on your database" 안내는 `npx pgvector-doctor …` 로 적혀 있지만 아직 npm 에 게시하지 않았으므로 지금은 `node dist/cli.js …` 로 바꿔 치세요. 그 안내의 measure 줄은 `--force-index` 없이 `--min-recall` 을 쓰므로, 필터 쿼리에서는 인덱스를 못 탄 것으로 판정돼 실패할 수 있습니다(아래 "가짜 만점 확인" 참고).
+- `demo` 끝에 나오는 "Try it on your database" 안내는 `npx pgvector-doctor …` 로 적혀 있습니다. 그 안내의 measure 줄은 `--force-index` 없이 `--min-recall` 을 쓰므로, 필터 쿼리에서는 인덱스를 못 탄 것으로 판정돼 실패할 수 있습니다(아래 "가짜 만점 확인" 참고).
 - 연습용 목 모드의 지연(ms)은 WASM 값이고 recall 소수 셋째 자리는 실행마다 조금 달라집니다. 실제 Postgres 서버(pgvector 이미지)에 직접 붙이는 경로는 이 문서를 쓰는 환경에서 확인하지 못했고, `pg` 드라이버 경로는 PGlite 소켓 서버로 확인했습니다.
 
 ## 언제 쓰나

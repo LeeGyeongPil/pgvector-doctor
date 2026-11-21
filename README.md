@@ -2,7 +2,7 @@
 
 **English** | [한국어](README.ko.md)
 
-pgvector-doctor measures how many of the true nearest neighbours your pgvector HNSW index actually returns (recall@k) for your own filtered SQL, broken down by filter value, and picks the cheapest `ef_search` / `iterative_scan` setting that reaches a recall target, including the `SET LOCAL` statements to paste in. A filtered search such as `WHERE tenant_id = $2 ORDER BY embedding <=> $1 LIMIT 10` can return fewer results without any error; this tool compares your SQL as written against exact search and shows the numbers. It also catches the "fake 100% recall" you get when the planner skips the vector index. Run `git clone https://github.com/LeeGyeongPil/pgvector-doctor.git && cd pgvector-doctor && npm ci && npm start` for a server-free practice (mock) demo; after the npm release, `npx pgvector-doctor demo`.
+pgvector-doctor measures how many of the true nearest neighbours your pgvector HNSW index actually returns (recall@k) for your own filtered SQL, broken down by filter value, and picks the cheapest `ef_search` / `iterative_scan` setting that reaches a recall target, including the `SET LOCAL` statements to paste in. A filtered search such as `WHERE tenant_id = $2 ORDER BY embedding <=> $1 LIMIT 10` can return fewer results without any error; this tool compares your SQL as written against exact search and shows the numbers. It also catches the "fake 100% recall" you get when the planner skips the vector index. Run `git clone https://github.com/LeeGyeongPil/pgvector-doctor.git && cd pgvector-doctor && npm ci && npm start` for a server-free practice (mock) demo, or just run `npx pgvector-doctor demo` with no install.
 
 ![Scenes 2 and 3 of the demo: small tenant recall 0.059, recommended setting](docs/images/01-hero.png)
 *Part of the practice mock mode `npm start`. A small tenant (1% of the rows) has recall 0.059, and 100% of its queries fall short of LIMIT. The setting with iterative scan turned on is recommended.*
@@ -18,21 +18,27 @@ Node.js 22.12 or later is required (checked locally on v26.13.0; 22.12.0 and 24 
 
 ```bash
 # If you do not have Node (macOS): brew install node   /   (Linux, Windows: https://nodejs.org/en/download)
+npx pgvector-doctor demo      # Runs without installing: npx pgvector-doctor <command>
+```
+
+The examples below are written as `node dist/cli.js <command>` (the run-from-source form); you can use `npx pgvector-doctor <command>` instead.
+
+To use it as a library in app code, install it into your project.
+
+```bash
+npm install pgvector-doctor
+```
+
+### Run from source (for development)
+
+```bash
 git clone https://github.com/LeeGyeongPil/pgvector-doctor.git
 cd pgvector-doctor
 npm ci
-npm run build        # Creates dist/ — run later commands as node dist/cli.js
+npm run build        # Creates dist/ — then run node dist/cli.js <command>
 ```
 
-It has not been published to npm yet. **After publishing**, you can use the same commands without installing, as `npx pgvector-doctor <command>` (replace `node dist/cli.js` in the examples below with `npx pgvector-doctor`).
-
-To use it as a library in app code (before publishing), build the package file from the repo and install it into your project.
-
-```bash
-npm pack --ignore-scripts         # Creates pgvector-doctor-0.3.0.tgz
-cd /my/project
-npm install /path/to/pgvector-doctor-0.3.0.tgz
-```
+To try a local build as a package, run `npm pack --ignore-scripts` (creates `pgvector-doctor-0.3.0.tgz`) and `npm install /path/to/pgvector-doctor-0.3.0.tgz` in your project.
 
 ## Quick start
 
@@ -495,7 +501,7 @@ The connection string is accepted only through `--url` or `DATABASE_URL` and is 
 - It handles only HNSW (including `iterative_scan` in pgvector 0.8.0 or later). IVFFlat parameter tuning and diagnostics specific to halfvec and sparsevec do not exist yet; `check` only warns when a query uses IVFFlat.
 - With few cases, recall has a large margin of error. Try raising it above the default case count.
 - On a server with `standard_conforming_strings = off`, the checker's judgment may differ from the server's. Execution is blocked by item 2 above (the protocol).
-- The "Try it on your database" hint at the end of `demo` is written as `npx pgvector-doctor …`, but it has not been published to npm yet, so for now replace it with `node dist/cli.js …`. The measure line in that hint uses `--min-recall` without `--force-index`, so for a filtered query it is judged as not having used the index and may fail (see "Checking for a fake perfect score" above).
+- The "Try it on your database" hint at the end of `demo` is written as `npx pgvector-doctor …`. The measure line in that hint uses `--min-recall` without `--force-index`, so for a filtered query it is judged as not having used the index and may fail (see "Checking for a fake perfect score" above).
 - The latency (ms) in practice mock mode is a WASM value, and the third decimal of recall varies slightly from run to run. The path of connecting directly to a real Postgres server (the pgvector image) could not be verified in the environment where this document was written; the `pg` driver path was verified with a PGlite socket server.
 
 ## When to use it
