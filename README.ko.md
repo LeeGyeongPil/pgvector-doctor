@@ -38,7 +38,7 @@ npm ci
 npm run build        # dist/ 생성 — 이후 node dist/cli.js <명령> 으로 실행
 ```
 
-로컬 빌드를 패키지로 시험하려면 `npm pack --ignore-scripts`(`pgvector-doctor-0.3.0.tgz` 생성) 후 내 프로젝트에서 `npm install /경로/pgvector-doctor-0.3.0.tgz` 를 실행합니다.
+로컬 빌드를 패키지로 시험하려면 `npm pack --ignore-scripts`(`pgvector-doctor-0.3.1.tgz` 생성) 후 내 프로젝트에서 `npm install /경로/pgvector-doctor-0.3.1.tgz` 를 실행합니다.
 
 ## 빠르게 시작하기
 

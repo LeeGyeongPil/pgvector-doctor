@@ -2,6 +2,12 @@
 
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/), 버전은 [SemVer](https://semver.org/lang/ko/)를 따릅니다.
 
+## [0.3.1] - 2026-11-21
+
+### Changed
+- README install section uses the published npm package.
+
+
 ## [0.3.0] - 2026-11-13
 
 ### Added

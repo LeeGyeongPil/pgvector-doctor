@@ -38,7 +38,7 @@ npm ci
 npm run build        # Creates dist/ — then run node dist/cli.js <command>
 ```
 
-To try a local build as a package, run `npm pack --ignore-scripts` (creates `pgvector-doctor-0.3.0.tgz`) and `npm install /path/to/pgvector-doctor-0.3.0.tgz` in your project.
+To try a local build as a package, run `npm pack --ignore-scripts` (creates `pgvector-doctor-0.3.1.tgz`) and `npm install /path/to/pgvector-doctor-0.3.1.tgz` in your project.
 
 ## Quick start
 
